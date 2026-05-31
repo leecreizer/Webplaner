@@ -1,0 +1,314 @@
+import { create } from 'zustand';
+
+/**
+ * drei의 `<Environment preset>` 값. HDR 환경맵으로 IBL(image-based lighting)을 제공.
+ */
+export type EnvironmentPreset =
+  | 'apartment'
+  | 'city'
+  | 'dawn'
+  | 'forest'
+  | 'lobby'
+  | 'night'
+  | 'park'
+  | 'studio'
+  | 'sunset'
+  | 'warehouse';
+
+/** 그림자 품질 — shadowMap 종류 + 해상도 + soft radius를 묶음. */
+export type ShadowQuality = 'low' | 'medium' | 'high' | 'ultra';
+
+/** 톤매핑 알고리즘. ACES Filmic이 사실적 렌더링의 표준. */
+export type ToneMappingMode = 'none' | 'linear' | 'reinhard' | 'cineon' | 'aces' | 'agx';
+
+/**
+ * 방향 조명(태양광) + 환경광 + 그림자 + 포스트프로세싱 상태.
+ *
+ * 방향 조명의 위치는 (azimuth, elevation, distance) 구면 좌표로 표현된다.
+ *
+ * 참고: realism-effects / threejs-realistic-render 등의 패턴을 종합 — Soft shadow (PCFSoft),
+ * ACES Filmic tone mapping, sRGB color space, HDR environment, EffectComposer 기반 Bloom/SSAO/
+ * Vignette/DOF를 조합한다.
+ */
+export interface LightingState {
+  // ===== 광원 =================================================
+  azimuth: number;
+  elevation: number;
+  distance: number;
+  intensity: number;
+  ambientIntensity: number;
+
+  // ===== 그림자 ===============================================
+  castShadow: boolean;
+  shadowQuality: ShadowQuality;
+  /** 그림자 가장자리 부드러움 (PCFSoft `radius` — 큰 값 = 더 부드러움). */
+  shadowSoftness: number;
+  /** 그림자 강도 (0=거의 없음, 1=완전 검정). ambientLight 강도를 역으로 줄여 darkening. */
+  shadowStrength: number;
+  /** 그림자(=음영) 색. ambientLight의 color로 적용 — 그림자 진 영역의 색조. */
+  shadowColor: string;
+
+  // ===== Fake GI (poor-man's Global Illumination) ===========
+  /** GI 강도 (HemisphereLight intensity + AccumulativeShadows 누적 강화). 0이면 비활성. */
+  giIntensity: number;
+  /** sky 방향에서 내려오는 ambient bounce 색 (천장/위쪽 광 시뮬). */
+  giSkyColor: string;
+  /** ground 방향에서 올라오는 bounce 색 (바닥/벽 반사 시뮬 — 약한 warm tone). */
+  giGroundColor: string;
+
+  // ===== 라이트맵 ============================================
+  /** SpaceLightmap (AccumulativeShadows 기반 베이크 그림자) 적용 여부. */
+  lightmapEnabled: boolean;
+
+  // ===== LightProbe (CubeCamera + SH) ========================
+  /** three.js native LightProbe — 씬을 cube camera로 캡처해 SH 계수로 IBL ambient 생성. */
+  lightProbeEnabled: boolean;
+  /** LightProbe 강도 (0~3). 1.0이 표준 IBL. */
+  lightProbeIntensity: number;
+  /** GPU Path Tracer 활성 — 유니티/언리얼 수준의 GI/반사 — 카메라 정지 시 progressive sample 누적.
+   *  무거운 작업이라 default false. 사용자가 명시적으로 토글. */
+  pathtracerEnabled: boolean;
+  /** Path tracer bounces (광 반사 횟수). 3~6이 일반적. 높을수록 정교, 비용 증가. */
+  pathtracerBounces: number;
+
+  // ===== 환경맵 (IBL) =========================================
+  environmentPreset: EnvironmentPreset;
+  /** HDR을 배경으로도 보일지 (true면 sky/주변 풍경 표시, false면 단색 배경). */
+  environmentBackground: boolean;
+  /** Environment 강도(0~3). */
+  environmentIntensity: number;
+
+  // ===== Tone mapping / exposure ==============================
+  toneMapping: ToneMappingMode;
+  /** 노출(exposure). 1.0 = 기본. ACES와 함께 조정. */
+  toneMappingExposure: number;
+
+  // ===== 포스트프로세싱 =======================================
+  /** 밝은 부분이 빛 번지듯 빛나는 효과. */
+  bloomEnabled: boolean;
+  bloomIntensity: number;
+
+  /** N8AO — 모서리·구석을 자연스럽게 어둡게 (Horizon-Based Ambient Occlusion). */
+  ssaoEnabled: boolean;
+  ssaoIntensity: number;
+  /** AO 반경(m). 인테리어 스케일은 0.3~0.8 권장. */
+  aoRadius: number;
+  /** AO 거리 페이드. 0.1~1 범위, 작을수록 halo 적음. */
+  aoDistanceFalloff: number;
+
+  /** GTAO (Ground Truth AO, three.js native) 활성. N8AO와 별개. */
+  gtaoEnabled: boolean;
+  /** GTAO blend intensity (0~1). */
+  gtaoIntensity: number;
+  /** GTAO sampling 반경 (m 환산은 scale에 의존). */
+  gtaoRadius: number;
+  /** GTAO 거리 페이드 — halo 줄이기. */
+  gtaoDistanceFalloff: number;
+  /** GTAO 두께 — geometry self-occlusion 방지. */
+  gtaoThickness: number;
+  /** GTAO scale — radius 곱셈자. */
+  gtaoScale: number;
+
+  /** 화면 가장자리 어둡게 비네팅. */
+  vignetteEnabled: boolean;
+  vignetteIntensity: number;
+
+  /** 피사계 심도(DOF) — 카메라 포커스 거리 외 흐림. 인테리어에서는 보통 OFF. */
+  dofEnabled: boolean;
+  dofFocusDistance: number;
+  dofBokehScale: number;
+
+  // ===== Setters ==============================================
+  setAzimuth: (v: number) => void;
+  setElevation: (v: number) => void;
+  setDistance: (v: number) => void;
+  setIntensity: (v: number) => void;
+  setAmbientIntensity: (v: number) => void;
+  setCastShadow: (v: boolean) => void;
+  setShadowQuality: (v: ShadowQuality) => void;
+  setShadowSoftness: (v: number) => void;
+  setShadowStrength: (v: number) => void;
+  setShadowColor: (v: string) => void;
+  setGiIntensity: (v: number) => void;
+  setGiSkyColor: (v: string) => void;
+  setGiGroundColor: (v: string) => void;
+  setLightmapEnabled: (v: boolean) => void;
+  setLightProbeEnabled: (v: boolean) => void;
+  setLightProbeIntensity: (v: number) => void;
+  setPathtracerEnabled: (v: boolean) => void;
+  setPathtracerBounces: (v: number) => void;
+  setEnvironmentPreset: (v: EnvironmentPreset) => void;
+  setEnvironmentBackground: (v: boolean) => void;
+  setEnvironmentIntensity: (v: number) => void;
+  setToneMapping: (v: ToneMappingMode) => void;
+  setToneMappingExposure: (v: number) => void;
+  setBloomEnabled: (v: boolean) => void;
+  setBloomIntensity: (v: number) => void;
+  setSsaoEnabled: (v: boolean) => void;
+  setSsaoIntensity: (v: number) => void;
+  setAoRadius: (v: number) => void;
+  setAoDistanceFalloff: (v: number) => void;
+  setGtaoEnabled: (v: boolean) => void;
+  setGtaoIntensity: (v: number) => void;
+  setGtaoRadius: (v: number) => void;
+  setGtaoDistanceFalloff: (v: number) => void;
+  setGtaoThickness: (v: number) => void;
+  setGtaoScale: (v: number) => void;
+  setVignetteEnabled: (v: boolean) => void;
+  setVignetteIntensity: (v: number) => void;
+  setDofEnabled: (v: boolean) => void;
+  setDofFocusDistance: (v: number) => void;
+  setDofBokehScale: (v: number) => void;
+
+  /** 빛 위치를 sphere + TransformControls 기즈모로 화면에 표시. */
+  showLightGizmo: boolean;
+  setShowLightGizmo: (v: boolean) => void;
+
+  /** TransformControls 모드 — 이동 vs 회전. */
+  lightGizmoMode: 'translate' | 'rotate';
+  setLightGizmoMode: (v: 'translate' | 'rotate') => void;
+
+  reset: () => void;
+}
+
+const DEFAULTS = {
+  azimuth: 30,
+  elevation: 55,
+  distance: 18,
+  intensity: 1.2,
+  ambientIntensity: 0.4,
+
+  castShadow: true,
+  shadowQuality: 'high' as ShadowQuality,
+  shadowSoftness: 6,
+  shadowStrength: 0.7,
+  shadowColor: '#000000',
+
+  giIntensity: 0.6,
+  giSkyColor: '#e8f0ff',
+  giGroundColor: '#b08560',
+
+  // default off — AccumulativeShadows가 spaces 변경 시 reset되며 검은 plane이 일시 노출(자글거림)
+  // 또 공간 그리기 중 누적이 매번 무효화되어 화면이 검게 보이는 문제. 사용자가 명시적으로 켤 때만.
+  lightmapEnabled: false,
+
+  // LightProbe default off — 카메라 6면 capture는 비용 큼. 사용자가 명시적으로 토글.
+  lightProbeEnabled: false,
+  lightProbeIntensity: 1.0,
+  pathtracerEnabled: false,
+  pathtracerBounces: 4,
+
+  environmentPreset: 'apartment' as EnvironmentPreset,
+  environmentBackground: false,
+  environmentIntensity: 1.0,
+
+  toneMapping: 'aces' as ToneMappingMode,
+  toneMappingExposure: 1.0,
+
+  bloomEnabled: true,
+  bloomIntensity: 0.35,
+
+  ssaoEnabled: true,
+  ssaoIntensity: 3.0,
+  aoRadius: 0.5,
+  aoDistanceFalloff: 0.2,
+
+  // GTAO default off — 사용자가 명시적으로 토글. N8AO와 별개로 동작.
+  gtaoEnabled: false,
+  gtaoIntensity: 1.0,
+  gtaoRadius: 0.5,
+  gtaoDistanceFalloff: 1.0,
+  gtaoThickness: 1.0,
+  gtaoScale: 1.0,
+
+  vignetteEnabled: true,
+  vignetteIntensity: 0.35,
+
+  dofEnabled: false,
+  dofFocusDistance: 8,
+  dofBokehScale: 3,
+
+  showLightGizmo: false,
+  lightGizmoMode: 'translate' as 'translate' | 'rotate',
+};
+
+/** dev 모드 진단용으로 store를 window에 노출. */
+if (typeof window !== 'undefined') {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  setTimeout(() => { (window as any).__lightingStore = useLightingStore; }, 0);
+}
+
+export const useLightingStore = create<LightingState>((set) => ({
+  ...DEFAULTS,
+  setAzimuth: (v) => set({ azimuth: v }),
+  setElevation: (v) => set({ elevation: v }),
+  setDistance: (v) => set({ distance: v }),
+  setIntensity: (v) => set({ intensity: v }),
+  setAmbientIntensity: (v) => set({ ambientIntensity: v }),
+  setCastShadow: (v) => set({ castShadow: v }),
+  setShadowQuality: (v) => set({ shadowQuality: v }),
+  setShadowSoftness: (v) => set({ shadowSoftness: v }),
+  setShadowStrength: (v) => set({ shadowStrength: v }),
+  setShadowColor: (v) => set({ shadowColor: v }),
+  setGiIntensity: (v) => set({ giIntensity: v }),
+  setGiSkyColor: (v) => set({ giSkyColor: v }),
+  setGiGroundColor: (v) => set({ giGroundColor: v }),
+  setLightmapEnabled: (v) => set({ lightmapEnabled: v }),
+  setLightProbeEnabled: (v) => set({ lightProbeEnabled: v }),
+  setLightProbeIntensity: (v) => set({ lightProbeIntensity: v }),
+  setPathtracerEnabled: (v) => set({ pathtracerEnabled: v }),
+  setPathtracerBounces: (v) => set({ pathtracerBounces: v }),
+  setEnvironmentPreset: (v) => set({ environmentPreset: v }),
+  setEnvironmentBackground: (v) => set({ environmentBackground: v }),
+  setEnvironmentIntensity: (v) => set({ environmentIntensity: v }),
+  setToneMapping: (v) => set({ toneMapping: v }),
+  setToneMappingExposure: (v) => set({ toneMappingExposure: v }),
+  setBloomEnabled: (v) => set({ bloomEnabled: v }),
+  setBloomIntensity: (v) => set({ bloomIntensity: v }),
+  setSsaoEnabled: (v) => set({ ssaoEnabled: v }),
+  setSsaoIntensity: (v) => set({ ssaoIntensity: v }),
+  setAoRadius: (v) => set({ aoRadius: v }),
+  setAoDistanceFalloff: (v) => set({ aoDistanceFalloff: v }),
+  setGtaoEnabled: (v) => set({ gtaoEnabled: v }),
+  setGtaoIntensity: (v) => set({ gtaoIntensity: v }),
+  setGtaoRadius: (v) => set({ gtaoRadius: v }),
+  setGtaoDistanceFalloff: (v) => set({ gtaoDistanceFalloff: v }),
+  setGtaoThickness: (v) => set({ gtaoThickness: v }),
+  setGtaoScale: (v) => set({ gtaoScale: v }),
+  setVignetteEnabled: (v) => set({ vignetteEnabled: v }),
+  setVignetteIntensity: (v) => set({ vignetteIntensity: v }),
+  setDofEnabled: (v) => set({ dofEnabled: v }),
+  setDofFocusDistance: (v) => set({ dofFocusDistance: v }),
+  setDofBokehScale: (v) => set({ dofBokehScale: v }),
+  setShowLightGizmo: (v) => set({ showLightGizmo: v }),
+  setLightGizmoMode: (v) => set({ lightGizmoMode: v }),
+  reset: () => set(DEFAULTS),
+}));
+
+/**
+ * 구면 좌표(azimuth/elevation/distance) → 카르테시안 (x, y, z) 변환.
+ * Three.js 표준 (right-handed, Y up, +Z = "북") 좌표계.
+ */
+export function sphericalToCartesian(
+  azimuthDeg: number,
+  elevationDeg: number,
+  distance: number,
+): [number, number, number] {
+  const az = (azimuthDeg * Math.PI) / 180;
+  const el = (elevationDeg * Math.PI) / 180;
+  const y = distance * Math.sin(el);
+  const r = distance * Math.cos(el);
+  const x = r * Math.sin(az);
+  const z = r * Math.cos(az);
+  return [x, y, z];
+}
+
+/** 그림자 품질 → shadow-mapSize 매핑. */
+export function shadowMapSizeFor(quality: ShadowQuality): number {
+  switch (quality) {
+    case 'low': return 1024;
+    case 'medium': return 2048;
+    case 'high': return 4096;
+    case 'ultra': return 8192;
+  }
+}
