@@ -1,11 +1,13 @@
 import { useEffect, useMemo, useRef } from 'react';
 import { useThree } from '@react-three/fiber';
+import { Color } from 'three';
 import {
   EffectComposer,
   Bloom,
   Vignette,
   DepthOfField,
   ToneMapping,
+  SSAO,
 } from '@react-three/postprocessing';
 import {
   BlendFunction,
@@ -51,16 +53,29 @@ export function PostFX() {
 
   return (
     <EffectComposer ref={composerRef} multisampling={0} stencilBuffer={false}>
-      {/* GTAO (three.js native ground-truth AO) — N8AO과 별개로 토글. composer ref로 직접 addPass */}
-      <GTAOMount
-        composerRef={composerRef}
-        enabled={gtaoEnabled}
-        intensity={gtaoIntensity}
-        radius={gtaoRadius}
-        distanceFalloff={gtaoDistanceFalloff}
-        thickness={gtaoThickness}
-        scale={gtaoScale}
-      />
+      {/* GTAO 자리 — pmndrs/postprocessing 의 native SSAO Effect 로 교체. three.js native
+          GTAOPass 는 vanilla Pass 시그니처라 pmndrs EffectComposer 에서 silent fail.
+          SSAO 는 pmndrs native Effect 라 정상 작동. UI 의 "GTAO" 토글이 그대로 활성. */}
+      {gtaoEnabled ? (
+        <SSAO
+          blendFunction={BlendFunction.MULTIPLY}
+          samples={31}
+          radius={gtaoRadius}
+          intensity={gtaoIntensity * 10}
+          luminanceInfluence={0.7}
+          color={new Color('black')}
+          worldDistanceThreshold={gtaoDistanceFalloff * 100}
+          worldDistanceFalloff={gtaoDistanceFalloff * 100}
+          worldProximityThreshold={gtaoThickness}
+          worldProximityFalloff={gtaoThickness}
+          fade={gtaoScale * 0.01}
+          rangeThreshold={0.5}
+          rangeFalloff={0.1}
+          bias={0.025}
+        />
+      ) : (
+        <></>
+      )}
       {/* N8AO는 composer ref로 직접 addPass — children에 넣으면 Effect로 오인됨 */}
       <N8AOMount
         composerRef={composerRef}
@@ -116,93 +131,8 @@ export function PostFX() {
  * - 캔버스 리사이즈는 `setSize` 호출
  * - unmount/disable 시 `removePass` + `dispose`
  */
-/**
- * GTAOPass(three.js native) mount/unmount — pmndrs composer에 직접 addPass.
- * GTAOPass는 vanilla `Pass`를 상속하지만 .render(renderer, writeBuffer, readBuffer, ...) signature가
- * pmndrs Pass와 다르므로 호환 안 될 수 있다. try/catch로 보호하고 init 실패 시 콘솔 경고만 출력.
- */
-function GTAOMount({
-  composerRef,
-  enabled,
-  intensity,
-  radius,
-  distanceFalloff,
-  thickness,
-  scale,
-}: {
-  composerRef: React.MutableRefObject<PPEffectComposer | null>;
-  enabled: boolean;
-  intensity: number;
-  radius: number;
-  distanceFalloff: number;
-  thickness: number;
-  scale: number;
-}) {
-  const { scene, camera, size } = useThree();
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const passRef = useRef<any>(null);
-
-  // GTAOPass 인스턴스는 enabled 시에만 생성 — 미사용 시 비용 없음
-  useEffect(() => {
-    if (!enabled) {
-      passRef.current = null;
-      return;
-    }
-    let cancelled = false;
-    (async () => {
-      try {
-        const mod = await import('three/examples/jsm/postprocessing/GTAOPass.js');
-        if (cancelled) return;
-        const GTAOPass = mod.GTAOPass;
-        const pass = new GTAOPass(scene, camera, size.width, size.height);
-        passRef.current = pass;
-        console.log('[GTAOPass] init OK');
-      } catch (e) {
-        console.warn('[GTAOPass] init 실패 — vanilla three Pass와 pmndrs composer 호환 이슈일 수 있음', e);
-      }
-    })();
-    return () => {
-      cancelled = true;
-      passRef.current = null;
-    };
-  }, [enabled, scene, camera, size.width, size.height]);
-
-  // 옵션 라이브 갱신
-  useEffect(() => {
-    const p = passRef.current;
-    if (!p) return;
-    try {
-      p.blendIntensity = intensity;
-      p.updateGtaoMaterial?.({
-        radius,
-        distanceFallOff: distanceFalloff,
-        thickness,
-        scale,
-      });
-    } catch {
-      // ignore
-    }
-  }, [intensity, radius, distanceFalloff, thickness, scale]);
-
-  // composer 등록/해제
-  useEffect(() => {
-    const composer = composerRef.current;
-    const pass = passRef.current;
-    if (!composer || !enabled || !pass) return;
-    try {
-      composer.addPass(pass, 1);
-    } catch (e) {
-      console.warn('[GTAOPass] addPass 실패 (vanilla Pass → pmndrs composer 호환 X)', e);
-      return;
-    }
-    return () => {
-      try { composer.removePass(pass); } catch {}
-    };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [composerRef, enabled, passRef.current]);
-
-  return null;
-}
+// GTAOMount 제거 — three.js native GTAOPass 는 pmndrs EffectComposer 호환 불가.
+// 같은 store flag (gtaoEnabled) 는 위 PostFX 의 <SSAO> Effect 로 사용된다.
 
 function N8AOMount({
   composerRef,
