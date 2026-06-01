@@ -26,6 +26,7 @@ import { EditTool } from '@/features/editing/EditTool';
 import { EditOverlay } from '@/features/editing/EditOverlay';
 import { Toolbar } from './ui/Toolbar';
 import { LightingPanel } from './ui/LightingPanel';
+import { LightInspector } from './ui/LightInspector';
 import { HostProvider } from './host/HostContext';
 import type { HostEventHandlers } from './host/HostEvents';
 
@@ -62,6 +63,7 @@ export default function App({
       <div style={{ position: 'relative', width: '100%', height: '100%' }}>
         {showToolbar && <Toolbar />}
         {showLightingPanel && <LightingPanel />}
+        {showLightingPanel && <LightInspector />}
         <Canvas
           shadows={{ type: PCFShadowMap }}
           gl={{
