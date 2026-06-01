@@ -3,6 +3,7 @@ import { Mesh, Object3D, Vector3 } from 'three';
 import { TransformControls } from '@react-three/drei';
 import { RectAreaLightUniformsLib } from 'three/examples/jsm/lights/RectAreaLightUniformsLib.js';
 import { useCustomLightStore, type CustomLight } from '@/engine/stores/customLightStore';
+import { useLightingStore, shadowMapSizeFor } from '@/engine/stores/lightingStore';
 
 // RectAreaLight 사용을 위해 한 번 초기화 (uniforms 등록)
 RectAreaLightUniformsLib.init();
@@ -31,6 +32,10 @@ export function CustomLights() {
 function CustomLightInstance({ light: l, selected }: { light: CustomLight; selected: boolean }) {
   const select = useCustomLightStore((s) => s.select);
   const update = useCustomLightStore((s) => s.update);
+  // 전역 그림자 품질 → mapSize (low=1024, medium=2048, high=4096, ultra=8192).
+  // 1024 는 가장자리 계단 현상이 심함 — 디폴트 'high'(4096)로 큰 향상.
+  const shadowQuality = useLightingStore((s) => s.shadowQuality);
+  const mapSize = shadowMapSizeFor(shadowQuality);
   const markerRef = useRef<Mesh>(null);
 
   // store의 position 변경을 mesh에 동기화 (외부에서 position이 변경된 경우 — 예: 패널 슬라이더)
@@ -50,25 +55,26 @@ function CustomLightInstance({ light: l, selected }: { light: CustomLight; selec
         <pointLight
           // shadow 관련 prop 이 변경되면 강제 remount — three.js 가 shadow map 텍스처를
           // light 생성 시점에 한 번 할당하므로 castShadow / radius / mapSize 변경 즉시 반영용
-          key={`pt-${l.castShadow ? 1 : 0}-${l.shadowRadius ?? 4}`}
+          key={`pt-${l.castShadow ? 1 : 0}-${l.shadowRadius ?? 4}-${mapSize}`}
           position={l.position}
           color={l.color}
           intensity={l.intensity}
           distance={l.distance ?? 10}
           decay={l.decay ?? 2}
           castShadow={l.castShadow ?? false}
-          // 인테리어 스케일 (~5m 룸) 에 맞는 cube shadow map 설정.
-          // 디폴트 mapSize=512 / camera-far=500 은 acne + 정밀도 부족으로 검은 띠/얼룩 유발.
-          shadow-mapSize={[1024, 1024]}
+          // 디폴트 mapSize=512 / camera-far=500 은 acne + 정밀도 부족으로 가장자리 계단 유발.
+          // 전역 shadowQuality 따라 1024~8192. blurSamples 도 cap 25 → 50 으로 늘려
+          // 큰 radius 에서 PCF band 패턴(거친 줄무늬) 감소.
+          shadow-mapSize={[mapSize, mapSize]}
           shadow-radius={l.shadowRadius ?? 4}
-          shadow-blurSamples={Math.max(4, Math.min(25, Math.round((l.shadowRadius ?? 4) * 2)))}
+          shadow-blurSamples={Math.max(8, Math.min(50, Math.round((l.shadowRadius ?? 4) * 4)))}
           shadow-bias={-0.0005}
           shadow-normalBias={0.02}
           shadow-camera-near={0.1}
           shadow-camera-far={Math.max(l.distance ?? 10, 0.5)}
         />
       )}
-      {l.kind === 'spot' && <SpotWithTarget light={l} />}
+      {l.kind === 'spot' && <SpotWithTarget light={l} mapSize={mapSize} />}
       {l.kind === 'rect' && (
         <rectAreaLight
           position={l.position}
@@ -124,7 +130,7 @@ function CustomLightInstance({ light: l, selected }: { light: CustomLight; selec
 }
 
 /** SpotLight + 명시적 target Object3D — store의 target 좌표를 따라간다. */
-function SpotWithTarget({ light: l }: { light: CustomLight }) {
+function SpotWithTarget({ light: l, mapSize }: { light: CustomLight; mapSize: number }) {
   const targetRef = useRef<Object3D>(new Object3D());
   const target = targetRef.current;
 
@@ -137,7 +143,7 @@ function SpotWithTarget({ light: l }: { light: CustomLight }) {
     <>
       <primitive object={target} />
       <spotLight
-        key={`sp-${l.castShadow ? 1 : 0}-${(l.angle ?? 0).toFixed(2)}-${l.shadowRadius ?? 4}`}
+        key={`sp-${l.castShadow ? 1 : 0}-${(l.angle ?? 0).toFixed(2)}-${l.shadowRadius ?? 4}-${mapSize}`}
         position={l.position}
         color={l.color}
         intensity={l.intensity}
@@ -147,10 +153,11 @@ function SpotWithTarget({ light: l }: { light: CustomLight }) {
         penumbra={l.penumbra ?? 0.4}
         castShadow={l.castShadow ?? false}
         target={target}
-        // 인테리어 스케일 spot shadow — 디폴트 frustum/bias 가 acne 유발.
-        shadow-mapSize={[1024, 1024]}
+        // 전역 shadowQuality 따라 mapSize 1024~8192. PCFShadowMap 기준 큰 mapSize 가
+        // 가장자리 계단을 줄이는 가장 큰 요소. blurSamples cap 25 → 50.
+        shadow-mapSize={[mapSize, mapSize]}
         shadow-radius={l.shadowRadius ?? 4}
-        shadow-blurSamples={Math.max(4, Math.min(25, Math.round((l.shadowRadius ?? 4) * 2)))}
+        shadow-blurSamples={Math.max(8, Math.min(50, Math.round((l.shadowRadius ?? 4) * 4)))}
         shadow-bias={-0.0005}
         shadow-normalBias={0.02}
         shadow-camera-near={0.1}
