@@ -13,11 +13,13 @@ const _csgEval = new Evaluator();
  * Unity의 `Floor` + `CeilingFloorBase.DirtyUpdate` + `MeshGenerator.GeneratePolyToMesh` 조합을
  * 단일 컴포넌트로 통합. `space.cornerPoints`를 Triangulator로 삼각분할.
  *
- * @param thickness 단차 내림 두께(m, Y 음의 방향 압출). 기본 0.
+ * @param thickness 바닥 두께(m, Y 음의 방향 압출). 기본 0.05 — 단면 메시면 빛이 투과해
+ *   실내 그림자가 형성되지 않으므로 항상 두께를 가진 박스로 만든다. 윗면 좌표는
+ *   `DEFAULT_FLOOR_HEIGHT`로 유지되고 아래로만 두꺼워진다.
  */
 export function FloorView({
   space,
-  thickness = 0,
+  thickness = 0.05,
   color = '#e0d6c4',
 }: {
   space: Space;
@@ -34,9 +36,10 @@ export function FloorView({
   const geometry = useMemo(() => {
     const pts = space.cornerPoints;
     if (pts.length < 3) return null;
-    const origin = new Vector3(0, Space.DEFAULT_FLOOR_HEIGHT + thickness, 0);
+    // 윗면 좌표가 DEFAULT_FLOOR_HEIGHT, 아래로 thickness 만큼 압출
+    const origin = new Vector3(0, Space.DEFAULT_FLOOR_HEIGHT, 0);
     const base =
-      thickness === 0
+      thickness <= 0
         ? polyGeometry(pts as Vector2[], origin, new Vector3(0, 0, 1), false)
         : polyGeometryExtruded(pts as Vector2[], origin, new Vector3(0, 0, 1), thickness, false);
     if (!base || floorOps.length === 0) return base;
@@ -66,6 +69,7 @@ export function FloorView({
   return (
     <mesh
       geometry={geometry}
+      castShadow
       receiveShadow
       userData={{ editKind: 'floor', editOwnerId: space.spaceIndex }}
     >
