@@ -1,5 +1,5 @@
 import { useMemo } from 'react';
-import { Vector2, Vector3 } from 'three';
+import { DoubleSide, Vector2, Vector3 } from 'three';
 import { Brush, Evaluator, SUBTRACTION, ADDITION } from 'three-bvh-csg';
 import { Space } from '@/domain/structures/Space';
 import { polyGeometry, polyGeometryExtruded } from '@/engine/mesh/MeshGenerator';
@@ -75,7 +75,13 @@ export function CeilingView({
       receiveShadow
       userData={{ editKind: 'ceiling', editOwnerId: space.spaceIndex }}
     >
-      <meshStandardMaterial color={color} roughness={0.9} metalness={0.0} />
+      <meshStandardMaterial
+        color={color}
+        roughness={0.9}
+        metalness={0.0}
+        side={DoubleSide}
+        shadowSide={DoubleSide}
+      />
     </mesh>
   );
 }

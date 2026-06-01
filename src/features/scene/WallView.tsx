@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useThree } from '@react-three/fiber';
 import { Html } from '@react-three/drei';
-import { Matrix4, Plane, Quaternion, Raycaster, Vector2, Vector3 } from 'three';
+import { DoubleSide, Matrix4, Plane, Quaternion, Raycaster, Vector2, Vector3 } from 'three';
 import type { ThreeEvent } from '@react-three/fiber';
 import { Brush, Evaluator, SUBTRACTION, ADDITION } from 'three-bvh-csg';
 import { Wall } from '@/domain/structures/Wall';
@@ -271,7 +271,13 @@ export function WallView({ wall, color = '#cccccc' }: { wall: Wall; color?: stri
             if (!dragging) gl.domElement.style.cursor = '';
           }}
         >
-          <meshStandardMaterial color={wallColor} roughness={0.85} metalness={0.0} />
+          <meshStandardMaterial
+            color={wallColor}
+            roughness={0.85}
+            metalness={0.0}
+            side={DoubleSide}
+            shadowSide={DoubleSide}
+          />
         </mesh>
       </group>
 
