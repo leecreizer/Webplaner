@@ -56,6 +56,9 @@ export function PostFX() {
           skip 방지. radius/intensity 만 store 에 매핑, 나머지는 라이브러리 디폴트. */}
       {gtaoEnabled ? (
         <SSAO
+          // pmndrs SSAOEffect 는 mount 시점 props 만 적용 — store 슬라이더 변경 시
+          // reactive 안 됨. key 에 모든 값 해시 → 변경마다 강제 remount 로 새 인스턴스.
+          key={`ssao-${gtaoIntensity}-${gtaoRadius}-${gtaoDistanceFalloff}-${gtaoThickness}-${gtaoScale}`}
           blendFunction={BlendFunction.MULTIPLY}
           samples={31}
           rings={4}
@@ -64,11 +67,10 @@ export function PostFX() {
           luminanceInfluence={0.7}
           distanceScaling={true}
           bias={0.025}
-          // pmndrs SSAOEffect required props — 모두 적절히 채워야 silent skip 없음
-          worldDistanceThreshold={gtaoDistanceFalloff * 30}
-          worldDistanceFalloff={gtaoDistanceFalloff * 30}
-          worldProximityThreshold={gtaoThickness * 5}
-          worldProximityFalloff={gtaoThickness * 5}
+          worldDistanceThreshold={Math.max(1, gtaoDistanceFalloff * 30)}
+          worldDistanceFalloff={Math.max(1, gtaoDistanceFalloff * 30)}
+          worldProximityThreshold={Math.max(1, gtaoThickness * 5)}
+          worldProximityFalloff={Math.max(1, gtaoThickness * 5)}
         />
       ) : (
         <></>
