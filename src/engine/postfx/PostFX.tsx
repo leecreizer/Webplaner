@@ -1,6 +1,5 @@
 import { useEffect, useMemo, useRef } from 'react';
 import { useThree } from '@react-three/fiber';
-import { Color } from 'three';
 import {
   EffectComposer,
   Bloom,
@@ -52,26 +51,24 @@ export function PostFX() {
   if (!anyEnabled) return null;
 
   return (
-    <EffectComposer ref={composerRef} multisampling={0} stencilBuffer={false}>
-      {/* GTAO 자리 — pmndrs/postprocessing 의 native SSAO Effect 로 교체. three.js native
-          GTAOPass 는 vanilla Pass 시그니처라 pmndrs EffectComposer 에서 silent fail.
-          SSAO 는 pmndrs native Effect 라 정상 작동. UI 의 "GTAO" 토글이 그대로 활성. */}
+    <EffectComposer ref={composerRef} multisampling={0} stencilBuffer={false} enableNormalPass>
+      {/* GTAO 토글 자리 — pmndrs/postprocessing native SSAO Effect. props 최소화로 silent
+          skip 방지. radius/intensity 만 store 에 매핑, 나머지는 라이브러리 디폴트. */}
       {gtaoEnabled ? (
         <SSAO
           blendFunction={BlendFunction.MULTIPLY}
           samples={31}
-          radius={gtaoRadius}
-          intensity={gtaoIntensity * 10}
+          rings={4}
+          radius={Math.max(0.05, gtaoRadius * 30)}
+          intensity={Math.max(1, gtaoIntensity * 30)}
           luminanceInfluence={0.7}
-          color={new Color('black')}
-          worldDistanceThreshold={gtaoDistanceFalloff * 100}
-          worldDistanceFalloff={gtaoDistanceFalloff * 100}
-          worldProximityThreshold={gtaoThickness}
-          worldProximityFalloff={gtaoThickness}
-          fade={gtaoScale * 0.01}
-          rangeThreshold={0.5}
-          rangeFalloff={0.1}
+          distanceScaling={true}
           bias={0.025}
+          // pmndrs SSAOEffect required props — 모두 적절히 채워야 silent skip 없음
+          worldDistanceThreshold={gtaoDistanceFalloff * 30}
+          worldDistanceFalloff={gtaoDistanceFalloff * 30}
+          worldProximityThreshold={gtaoThickness * 5}
+          worldProximityFalloff={gtaoThickness * 5}
         />
       ) : (
         <></>
