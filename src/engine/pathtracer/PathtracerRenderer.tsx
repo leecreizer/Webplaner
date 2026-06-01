@@ -46,15 +46,18 @@ export function PathtracerRenderer() {
       const ptAny = pt as any;
       if (typeof ptAny.bounces !== 'undefined') ptAny.bounces = bounces;
       if (ptAny.tiles && typeof ptAny.tiles.set === 'function') ptAny.tiles.set(2, 2);
-      // 카메라 이동/회전 중에는 저해상도 path trace 로 즉시 반응 — 정지 시 full res 누적.
-      // 이게 없으면 카메라 변경마다 reset 후 첫 sample 이 매우 noisy 라 사용자는 화면이
-      // "얼어붙은" 것처럼 느낀다.
+      // ── 노이즈 감소 (자글거림 + 수렴 속도 핵심) ──
+      // MIS(Multiple Importance Sampling): 조명+환경 동시 샘플링으로 같은 sample 수에서
+      // 노이즈 대폭 감소. 인테리어 같은 env-lit 씬에서 효과 가장 큼.
+      if (typeof ptAny.multipleImportanceSampling !== 'undefined') {
+        ptAny.multipleImportanceSampling = true;
+      }
+      // filterGlossyFactor: roughness 낮은 표면의 firefly(흰 반짝이 점) 억제. 0=off, 0.5~1 권장.
+      if (typeof ptAny.filterGlossyFactor !== 'undefined') ptAny.filterGlossyFactor = 1.0;
+      // 카메라 이동/회전 중 저해상도 path trace 로 즉시 반응 — 정지 시 full res 누적.
       ptAny.dynamicLowRes = true;
-      // 저해상도 배율 (1.0 = full, 0.25 = 1/4). 작을수록 빠르지만 거침.
       if (typeof ptAny.lowResScale !== 'undefined') ptAny.lowResScale = 0.25;
-      // 카메라 변경 감지 후 path tracer 재시작 delay (ms). 짧을수록 반응 빠름.
       if (typeof ptAny.renderDelay !== 'undefined') ptAny.renderDelay = 50;
-      // raster fallback 활성 — 누적 전 첫 몇 sample 동안 일반 r3f 렌더로 즉시 표시.
       ptAny.rasterizeScene = true;
       ptRef.current = pt;
       console.log('[Pathtracer] init OK', { bounces });
@@ -141,11 +144,15 @@ export function PathtracerRenderer() {
       // 트리거한다. 이게 없으면 회전해도 처음 수렴한 frame 에 *멈춰* 있고 저해상도 모드도 안 켜짐.
       camera.updateMatrixWorld();
       const key = camera.matrixWorld.elements.join(',');
-      if (key !== prevCamKey.current) {
+      const moved = key !== prevCamKey.current;
+      if (moved) {
         prevCamKey.current = key;
         if (typeof ptAny.updateCamera === 'function') ptAny.updateCamera();
       }
-      pt.renderSample();
+      // 정지 상태면 frame 당 여러 sample 누적 → 벽시계 기준 수렴 가속 (60fps 유지보다
+      // 빠른 수렴 우선). 움직이는 중엔 1회만 (반응성 우선). 정지 8 pass = 깨끗해지는 속도 ↑.
+      const passes = moved ? 1 : 8;
+      for (let i = 0; i < passes; i++) pt.renderSample();
       const s = ptAny.samples ?? 0;
       if (Math.floor(s) % 10 === 0 && Math.floor(s) !== Math.floor(samples)) {
         setSamples(s);

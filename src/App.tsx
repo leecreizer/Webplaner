@@ -292,12 +292,16 @@ function PostFXGate() {
 function OrbitControlsConditional() {
   const viewMode = useViewStore((s) => s.viewMode);
   const is2D = viewMode === '2D';
+  // path tracer 활성 시 damping OFF — 관성으로 마우스 놓은 뒤에도 ~1초 카메라가 계속
+  // 움직여 path tracer 가 그동안 계속 reset → "정지 즉시 수렴" 이 안 됨. damping 끄면
+  // 놓는 순간 카메라 정지 → 즉시 누적 시작.
+  const ptEnabled = useLightingStore((s) => s.pathtracerEnabled);
   return (
     <OrbitControls
-      // viewMode 변경 시 OrbitControls를 강제 remount해 카메라 자세도 초기화
-      key={viewMode}
+      // viewMode / ptEnabled 변경 시 remount
+      key={`${viewMode}-${ptEnabled ? 'pt' : 'raster'}`}
       makeDefault
-      enableDamping
+      enableDamping={!ptEnabled}
       dampingFactor={0.08}
       target={[0, 0, 0]}
       enableRotate={!is2D}
