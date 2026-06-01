@@ -1,5 +1,6 @@
 import { useLayoutStore, layoutRegistry } from '@/domain/state/layoutStore';
 import { useCustomLightStore } from '@/engine/stores/customLightStore';
+import { useLightingStore, type BuiltinLightKind } from '@/engine/stores/lightingStore';
 import { useMeshSelectionStore, meshKey } from '@/features/selection/meshSelectionStore';
 import { useSelectionStore } from '@/features/selection/selectionStore';
 import { useVisibilityStore } from '@/features/scene/visibilityStore';
@@ -29,6 +30,19 @@ export function SceneOutliner() {
   const removeLight = useCustomLightStore((s) => s.remove);
   const hidden = useVisibilityStore((s) => s.hidden);
   const toggle = useVisibilityStore((s) => s.toggle);
+
+  // 기본 광원
+  const selectedBuiltin = useLightingStore((s) => s.selectedBuiltin);
+  const setSelectedBuiltin = useLightingStore((s) => s.setSelectedBuiltin);
+  const sunVisible = useLightingStore((s) => s.sunVisible);
+  const ambientVisible = useLightingStore((s) => s.ambientVisible);
+  const hemiVisible = useLightingStore((s) => s.hemiVisible);
+  const setBuiltinVisible = useLightingStore((s) => s.setBuiltinVisible);
+  const builtinList: { kind: BuiltinLightKind; label: string; visible: boolean }[] = [
+    { kind: 'sun', label: '☀ 태양광 (Directional)', visible: sunVisible },
+    { kind: 'ambient', label: '○ 환경광 (Ambient)', visible: ambientVisible },
+    { kind: 'hemi', label: '◐ 헤미스피어 (Sky/Ground)', visible: hemiVisible },
+  ];
 
   return (
     <div style={panelStyle}>
@@ -84,6 +98,19 @@ export function SceneOutliner() {
             </div>
           );
         })}
+      </Section>
+
+      <Section title="기본 광원">
+        {builtinList.map((b) => (
+          <Row
+            key={b.kind}
+            label={b.label}
+            isSelected={selectedBuiltin === b.kind}
+            isHidden={!b.visible}
+            onSelect={() => setSelectedBuiltin(selectedBuiltin === b.kind ? null : b.kind)}
+            onToggle={() => setBuiltinVisible(b.kind, !b.visible)}
+          />
+        ))}
       </Section>
 
       <Section title={`라이트 (${lights.length})`}>

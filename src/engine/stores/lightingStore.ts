@@ -31,6 +31,9 @@ export type ToneMappingMode = 'none' | 'linear' | 'reinhard' | 'cineon' | 'aces'
  */
 export type GIMode = 'hemisphere' | 'single-probe' | 'probe-grid' | 'path-tracer';
 
+/** SceneOutliner 에서 선택 가능한 기본 광원 종류. Inspector 가 이걸 보고 적절한 컨트롤 노출. */
+export type BuiltinLightKind = 'sun' | 'ambient' | 'hemi';
+
 /**
  * 방향 조명(태양광) + 환경광 + 그림자 + 포스트프로세싱 상태.
  *
@@ -186,6 +189,16 @@ export interface LightingState {
   lightGizmoMode: 'translate' | 'rotate';
   setLightGizmoMode: (v: 'translate' | 'rotate') => void;
 
+  /** SceneOutliner 에서 선택된 기본 광원 — null 이면 Inspector 안 보임. */
+  selectedBuiltin: BuiltinLightKind | null;
+  setSelectedBuiltin: (v: BuiltinLightKind | null) => void;
+
+  /** 기본 광원 visibility — 끄면 intensity 0. */
+  sunVisible: boolean;
+  ambientVisible: boolean;
+  hemiVisible: boolean;
+  setBuiltinVisible: (kind: BuiltinLightKind, v: boolean) => void;
+
   reset: () => void;
 }
 
@@ -259,6 +272,11 @@ const DEFAULTS = {
 
   showLightGizmo: false,
   lightGizmoMode: 'translate' as 'translate' | 'rotate',
+
+  selectedBuiltin: null as BuiltinLightKind | null,
+  sunVisible: true,
+  ambientVisible: true,
+  hemiVisible: true,
 };
 
 /** dev 모드 진단용으로 store를 window에 노출. */
@@ -329,6 +347,16 @@ export const useLightingStore = create<LightingState>((set) => ({
   setDofBokehScale: (v) => set({ dofBokehScale: v }),
   setShowLightGizmo: (v) => set({ showLightGizmo: v }),
   setLightGizmoMode: (v) => set({ lightGizmoMode: v }),
+
+  setSelectedBuiltin: (v) => set({ selectedBuiltin: v }),
+  setBuiltinVisible: (kind, v) =>
+    set(
+      kind === 'sun'
+        ? { sunVisible: v }
+        : kind === 'ambient'
+          ? { ambientVisible: v }
+          : { hemiVisible: v },
+    ),
   reset: () => set(DEFAULTS),
 }));
 

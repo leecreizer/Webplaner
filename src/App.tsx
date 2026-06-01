@@ -30,6 +30,7 @@ import { LightingPanel } from './ui/LightingPanel';
 import { LightInspector } from './ui/LightInspector';
 import { MeshInspector } from './ui/MeshInspector';
 import { SceneOutliner } from './ui/SceneOutliner';
+import { BuiltinLightInspector } from './ui/BuiltinLightInspector';
 import { HostProvider } from './host/HostContext';
 import type { HostEventHandlers } from './host/HostEvents';
 
@@ -69,6 +70,7 @@ export default function App({
         {showLightingPanel && <LightInspector />}
         {showLightingPanel && <MeshInspector />}
         {showLightingPanel && <SceneOutliner />}
+        {showLightingPanel && <BuiltinLightInspector />}
         <Canvas
           shadows={{ type: PCFShadowMap }}
           gl={{
@@ -161,19 +163,17 @@ function SceneLights() {
   const giIntensity = useLightingStore((s) => s.giIntensity);
   const giSkyColor = useLightingStore((s) => s.giSkyColor);
   const giGroundColor = useLightingStore((s) => s.giGroundColor);
+  const sunVisible = useLightingStore((s) => s.sunVisible);
+  const ambientVisible = useLightingStore((s) => s.ambientVisible);
+  const hemiVisible = useLightingStore((s) => s.hemiVisible);
   const position = sphericalToCartesian(azimuth, elevation, distance);
   const mapSize = shadowMapSizeFor(shadowQuality);
   const effectiveAmbient = ambientIntensity * (1 - shadowStrength * 0.7);
-  // HemisphereLight 는 giMode === 'hemisphere' 일 때만 활성 — 다른 GI 모드 (single-probe,
-  // probe-grid, path-tracer) 에서는 LightProbe / cube capture / ray traced GI 가 indirect
-  // 를 담당하므로 hemisphere fake bounce 가 *추가* 적용되면 결과가 평탄해진다.
-  const hemiActive = giMode === 'hemisphere';
+  const hemiActive = giMode === 'hemisphere' && hemiVisible;
 
   return (
     <>
-      <ambientLight intensity={effectiveAmbient} color={shadowColor} />
-      {/* Fake GI — HemisphereLight: 위에서 sky 색, 아래에서 ground 색의 그라데이션 ambient.
-          giMode === 'hemisphere' 일 때만 적용. */}
+      <ambientLight intensity={ambientVisible ? effectiveAmbient : 0} color={shadowColor} />
       <hemisphereLight
         color={giSkyColor}
         groundColor={giGroundColor}
@@ -184,8 +184,8 @@ function SceneLights() {
         // PCFSoftShadowMap은 radius를 무시하므로 Canvas의 shadow type을 PCFShadowMap으로 변경했음.
         key={`dir-${mapSize}-${castShadow ? 1 : 0}-${shadowSoftness}`}
         position={position}
-        intensity={intensity}
-        castShadow={castShadow}
+        intensity={sunVisible ? intensity : 0}
+        castShadow={sunVisible && castShadow}
         shadow-mapSize={[mapSize, mapSize]}
         shadow-radius={shadowSoftness}
         shadow-blurSamples={Math.max(4, Math.min(25, Math.round(shadowSoftness * 2)))}
