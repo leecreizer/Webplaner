@@ -1,10 +1,11 @@
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import { useWallDrawingStore } from '@/features/drawing/wallDrawingStore';
 import { useViewStore } from '@/engine/stores/viewStore';
 import { useLayoutStore, layoutRegistry } from '@/domain/state/layoutStore';
 import { buildSpaces } from '@/domain/layout/SpaceBuilder';
 import { useCustomLightStore, type LightKind } from '@/engine/stores/customLightStore';
 import { useEditStore } from '@/features/editing/editStore';
+import { useImportedModelStore } from '@/features/models/importedModelStore';
 
 const LIGHT_OPTIONS: { kind: LightKind; label: string; desc: string }[] = [
   { kind: 'point', label: '포인트 (옴니)', desc: '360° 점 광원' },
@@ -85,6 +86,7 @@ export function Toolbar() {
       </button>
 
       <AddLightDropdown />
+      <ImportModelButton />
       <EditModeControls />
       <button onClick={reset} style={dangerButtonStyle}>
         초기화
@@ -169,6 +171,41 @@ function MiniSlider({
         {unit ?? ''}
       </span>
     </div>
+  );
+}
+
+/**
+ * 모델 불러오기 버튼 — 숨겨진 file input 트리거. GLB/GLTF 선택 시 blob URL 로 즉시 씬에 로드.
+ * 여러 파일 동시 선택 가능. gltf 는 외부 .bin/텍스처 참조가 있을 수 있어 자체완결 .glb 권장.
+ */
+function ImportModelButton() {
+  const inputRef = useRef<HTMLInputElement>(null);
+  const addFromFile = useImportedModelStore((s) => s.addFromFile);
+  return (
+    <>
+      <button
+        onClick={() => inputRef.current?.click()}
+        style={buttonStyle}
+        title="GLB / GLTF 3D 모델 파일을 불러옵니다 (.glb 권장 — 자체완결 포맷)"
+      >
+        📦 모델 불러오기
+      </button>
+      <input
+        ref={inputRef}
+        type="file"
+        accept=".glb,.gltf,model/gltf-binary,model/gltf+json"
+        multiple
+        style={{ display: 'none' }}
+        onChange={(e) => {
+          const files = e.target.files;
+          if (files) {
+            for (const f of Array.from(files)) addFromFile(f);
+          }
+          // 같은 파일 재선택 가능하도록 초기화
+          e.target.value = '';
+        }}
+      />
+    </>
   );
 }
 

@@ -22,6 +22,7 @@ import { SunGizmo } from '@/features/scene/SunGizmo';
 import { SpaceLightmap } from '@/engine/lighting/SpaceLightmap';
 import { SceneLightProbe } from '@/engine/lighting/SceneLightProbe';
 import { IrradianceProbeGrid } from '@/engine/lighting/IrradianceProbeGrid';
+import { ImportedModels } from '@/features/models/ImportedModels';
 import { PathtracerRenderer } from '@/engine/pathtracer/PathtracerRenderer';
 import { CustomLights } from '@/engine/lighting/CustomLights';
 import { EditTool } from '@/features/editing/EditTool';
@@ -74,6 +75,9 @@ export default function App({
         {showLightingPanel && <BuiltinLightInspector />}
         <Canvas
           shadows={{ type: PCFShadowMap }}
+          // 디스플레이 해상도(devicePixelRatio)에 맞춰 렌더 — 고DPI 화면에서 선명. r3f Canvas 는
+          // 부모 div(100%×100%) 크기에 ResizeObserver 로 자동 추종.
+          dpr={[1, 2]}
           gl={{
             antialias: true,
             preserveDrawingBuffer: true,
@@ -90,6 +94,7 @@ export default function App({
           <OrbitControlsConditional />
 
           <PlanScene showCeiling={showCeiling} showProducts={showProducts} />
+          <ImportedModels />
           <SpaceLightmap />
           <SceneLightProbe />
           <IrradianceProbeGrid />

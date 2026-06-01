@@ -73,6 +73,9 @@ export function PathtracerRenderer() {
       }
       // filterGlossyFactor: roughness 낮은 표면의 firefly(흰 반짝이 점) 억제. 0=off, 0.5~1 권장.
       if (typeof ptAny.filterGlossyFactor !== 'undefined') ptAny.filterGlossyFactor = 1.0;
+      // 렌더 타겟을 renderer drawingBuffer 크기에 자동 동기화 — 창 리사이즈/DPI 시 PT 출력이
+      // 캔버스에 꽉 차고 선명하게. false 면 init 시점 크기에 고정돼 작게/흐리게 보임.
+      if (typeof ptAny.synchronizeRenderSize !== 'undefined') ptAny.synchronizeRenderSize = true;
       // 카메라 이동/회전 중 저해상도 path trace 로 즉시 반응 — 정지 시 full res 누적.
       ptAny.dynamicLowRes = true;
       if (typeof ptAny.lowResScale !== 'undefined') ptAny.lowResScale = 0.25;
