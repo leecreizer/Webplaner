@@ -279,13 +279,13 @@ export const useLightingStore = create<LightingState>((set) => ({
       // 폐쇄 공간 외부에서 들어오게.
       environmentIntensity: 1.5,
       environmentBackground: true,
-      // path tracer 가 진짜 GI 를 계산하므로 fake 광원은 모두 0 — 안 그러면 결과가
-      // 평탄해져 어둠/대비가 사라진다.
-      ambientIntensity: 0,
-      giIntensity: 0,
+      // raster fallback 시 (카메라 이동/회전 중 첫 몇 sample) 화면이 완전 검정이 되지
+      // 않도록 약한 ambient 유지. path tracer 최종 결과에는 영향이 거의 없는 수준.
+      ambientIntensity: 0.05,
+      giIntensity: 0.05,
       shadowStrength: 1.0,
-      // raster 그림자는 path tracer 에서 의미 없음 — 비활성
-      castShadow: false,
+      // raster fallback 의 그림자도 유지 — 이동 중 형태감이 살아남
+      castShadow: true,
     }),
   setEnvironmentPreset: (v) => set({ environmentPreset: v }),
   setEnvironmentBackground: (v) => set({ environmentBackground: v }),

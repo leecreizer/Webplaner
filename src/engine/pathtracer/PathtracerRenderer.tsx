@@ -46,6 +46,16 @@ export function PathtracerRenderer() {
       const ptAny = pt as any;
       if (typeof ptAny.bounces !== 'undefined') ptAny.bounces = bounces;
       if (ptAny.tiles && typeof ptAny.tiles.set === 'function') ptAny.tiles.set(2, 2);
+      // 카메라 이동/회전 중에는 저해상도 path trace 로 즉시 반응 — 정지 시 full res 누적.
+      // 이게 없으면 카메라 변경마다 reset 후 첫 sample 이 매우 noisy 라 사용자는 화면이
+      // "얼어붙은" 것처럼 느낀다.
+      ptAny.dynamicLowRes = true;
+      // 저해상도 배율 (1.0 = full, 0.25 = 1/4). 작을수록 빠르지만 거침.
+      if (typeof ptAny.lowResScale !== 'undefined') ptAny.lowResScale = 0.25;
+      // 카메라 변경 감지 후 path tracer 재시작 delay (ms). 짧을수록 반응 빠름.
+      if (typeof ptAny.renderDelay !== 'undefined') ptAny.renderDelay = 50;
+      // raster fallback 활성 — 누적 전 첫 몇 sample 동안 일반 r3f 렌더로 즉시 표시.
+      ptAny.rasterizeScene = true;
       ptRef.current = pt;
       console.log('[Pathtracer] init OK', { bounces });
       // 글로벌 노출 — DevTools 검증
