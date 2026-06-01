@@ -26,7 +26,11 @@ import { useLayoutStore } from '@/domain/state/layoutStore';
  * - 작은 cube target (128px) — 비용 절감
  */
 export function SceneLightProbe() {
-  const enabled = useLightingStore((s) => s.lightProbeEnabled);
+  // giMode === 'single-probe' 일 때 자동 활성 (UI 와 일관). 기존 lightProbeEnabled
+  // checkbox 도 그대로 사용 가능 — 둘 중 하나만 true 면 동작.
+  const lightProbeEnabled = useLightingStore((s) => s.lightProbeEnabled);
+  const giMode = useLightingStore((s) => s.giMode);
+  const enabled = lightProbeEnabled || giMode === 'single-probe';
   const intensity = useLightingStore((s) => s.lightProbeIntensity);
   const azimuth = useLightingStore((s) => s.azimuth);
   const elevation = useLightingStore((s) => s.elevation);

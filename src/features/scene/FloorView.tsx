@@ -38,7 +38,7 @@ export function FloorView({
   // mesh 선택 + 사용자 material override + visibility
   const myKey = meshKey('floor', space.spaceIndex);
   const visible = useVisibilityStore((s) => !s.hidden[myKey]);
-  const selected = useMeshSelectionStore((s) => s.selectedMeshKey === myKey);
+  const selected = useMeshSelectionStore((s) => s.selectedMeshKeys.includes(myKey));
   const override = useMeshSelectionStore((s) => s.materials[myKey]);
   const selectMesh = useMeshSelectionStore((s) => s.selectMesh);
   const effectiveColor = override?.color ?? color;
@@ -88,7 +88,7 @@ export function FloorView({
         onPointerDown={(e) => {
           if (e.button !== 0) return;
           e.stopPropagation();
-          selectMesh(selected ? null : myKey);
+          selectMesh(myKey, e.shiftKey);
         }}
       >
         <meshStandardMaterial

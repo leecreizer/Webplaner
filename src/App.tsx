@@ -157,24 +157,27 @@ function SceneLights() {
   const shadowSoftness = useLightingStore((s) => s.shadowSoftness);
   const shadowStrength = useLightingStore((s) => s.shadowStrength);
   const shadowColor = useLightingStore((s) => s.shadowColor);
+  const giMode = useLightingStore((s) => s.giMode);
   const giIntensity = useLightingStore((s) => s.giIntensity);
   const giSkyColor = useLightingStore((s) => s.giSkyColor);
   const giGroundColor = useLightingStore((s) => s.giGroundColor);
   const position = sphericalToCartesian(azimuth, elevation, distance);
   const mapSize = shadowMapSizeFor(shadowQuality);
-  // 그림자 강도 = ambient를 그림자 영역에서 darkening. shadowStrength 1이면 ambient를 약 70%
-  // 줄여 그림자가 진하게 보이고, 0이면 그림자 영역도 ambient 만큼 밝아짐.
   const effectiveAmbient = ambientIntensity * (1 - shadowStrength * 0.7);
+  // HemisphereLight 는 giMode === 'hemisphere' 일 때만 활성 — 다른 GI 모드 (single-probe,
+  // probe-grid, path-tracer) 에서는 LightProbe / cube capture / ray traced GI 가 indirect
+  // 를 담당하므로 hemisphere fake bounce 가 *추가* 적용되면 결과가 평탄해진다.
+  const hemiActive = giMode === 'hemisphere';
 
   return (
     <>
       <ambientLight intensity={effectiveAmbient} color={shadowColor} />
       {/* Fake GI — HemisphereLight: 위에서 sky 색, 아래에서 ground 색의 그라데이션 ambient.
-          간단한 path-tracer 없이도 *천장 → 바닥 bounce + 벽 → floor color bleeding* 효과를 시뮬. */}
+          giMode === 'hemisphere' 일 때만 적용. */}
       <hemisphereLight
         color={giSkyColor}
         groundColor={giGroundColor}
-        intensity={giIntensity}
+        intensity={hemiActive ? giIntensity : 0}
       />
       <directionalLight
         // mapSize/cast/softness 중 하나라도 바뀌면 강제 remount — shadow map + radius 즉시 반영.

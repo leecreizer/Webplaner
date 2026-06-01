@@ -150,7 +150,7 @@ export function WallView({ wall, color = '#cccccc' }: { wall: Wall; color?: stri
   const myMeshKey = meshKey('wall', wall.wallIndex);
   const meshOverride = useMeshSelectionStore((s) => s.materials[myMeshKey]);
   const selectMesh = useMeshSelectionStore((s) => s.selectMesh);
-  const meshSelected = useMeshSelectionStore((s) => s.selectedMeshKey === myMeshKey);
+  const meshSelected = useMeshSelectionStore((s) => s.selectedMeshKeys.includes(myMeshKey));
   const visible = useVisibilityStore((s) => !s.hidden[myMeshKey]);
 
   if (geometry === null || !visible) return null;
@@ -170,13 +170,14 @@ export function WallView({ wall, color = '#cccccc' }: { wall: Wall; color?: stri
     // 좌클릭(button=0)만 선택/드래그 — 우클릭/가운데 버튼은 카메라 조작에 양보
     if (e.button !== 0) return;
     e.stopPropagation();
-    // 3D 모드 — 클릭만 = 선택 토글. 드래그/삭제 등 편집은 비활성 (카메라 회전 충돌 +
-    // 데이터 손상 방지). 에디트 모드(CSG)는 EditTool 이 별도로 처리.
+    // 3D 모드 — 클릭만 = 선택 (편집은 비활성). Shift+클릭 = 다중 추가/제거.
     if (!is2D) {
-      const cur = useSelectionStore.getState().selectedWall;
-      const next = cur === wall ? null : wall;
-      useSelectionStore.getState().selectWall(next);
-      selectMesh(next ? myMeshKey : null);
+      if (!e.shiftKey) {
+        const cur = useSelectionStore.getState().selectedWall;
+        const next = cur === wall ? null : wall;
+        useSelectionStore.getState().selectWall(next);
+      }
+      selectMesh(myMeshKey, e.shiftKey);
       return;
     }
     const downX = e.clientX;
@@ -258,12 +259,14 @@ export function WallView({ wall, color = '#cccccc' }: { wall: Wall; color?: stri
         setDragGuides([]);
         canvas.style.cursor = '';
       } else {
-        // 클릭(드래그 안 함) — 선택 토글. 3D 모드에서도 wall 선택만은 허용.
-        const cur = useSelectionStore.getState().selectedWall;
-        const next = cur === wall ? null : wall;
-        useSelectionStore.getState().selectWall(next);
-        // mesh inspector 동기화 — wall 선택 시 그 wall 의 material 도 inspector 에 표시
-        selectMesh(next ? myMeshKey : null);
+        // 클릭(드래그 안 함) — 선택. Shift 면 mesh multi-select 추가, 일반 클릭은 단일.
+        const shift = (e as unknown as { shiftKey?: boolean }).shiftKey ?? false;
+        if (!shift) {
+          const cur = useSelectionStore.getState().selectedWall;
+          const next = cur === wall ? null : wall;
+          useSelectionStore.getState().selectWall(next);
+        }
+        selectMesh(myMeshKey, shift);
       }
     };
 

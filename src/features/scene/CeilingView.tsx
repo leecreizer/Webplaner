@@ -36,7 +36,7 @@ export function CeilingView({
 
   const myKey = meshKey('ceiling', space.spaceIndex);
   const visible = useVisibilityStore((s) => !s.hidden[myKey]);
-  const selected = useMeshSelectionStore((s) => s.selectedMeshKey === myKey);
+  const selected = useMeshSelectionStore((s) => s.selectedMeshKeys.includes(myKey));
   const override = useMeshSelectionStore((s) => s.materials[myKey]);
   const selectMesh = useMeshSelectionStore((s) => s.selectMesh);
   const effectiveColor = override?.color ?? color;
@@ -87,7 +87,7 @@ export function CeilingView({
         onPointerDown={(e) => {
           if (e.button !== 0) return;
           e.stopPropagation();
-          selectMesh(selected ? null : myKey);
+          selectMesh(myKey, e.shiftKey);
         }}
       >
         <meshStandardMaterial

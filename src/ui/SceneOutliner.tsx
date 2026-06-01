@@ -22,7 +22,7 @@ export function SceneOutliner() {
   const walls = useLayoutStore((s) => s.walls);
   const spaces = useLayoutStore((s) => s.spaces);
   const lights = useCustomLightStore((s) => s.lights);
-  const selectedMeshKey = useMeshSelectionStore((s) => s.selectedMeshKey);
+  const selectedMeshKeys = useMeshSelectionStore((s) => s.selectedMeshKeys);
   const selectMesh = useMeshSelectionStore((s) => s.selectMesh);
   const selectedLightId = useCustomLightStore((s) => s.selectedId);
   const selectLight = useCustomLightStore((s) => s.select);
@@ -44,11 +44,11 @@ export function SceneOutliner() {
             <Row
               key={key}
               label={`wall-${w.wallIndex}`}
-              isSelected={selectedMeshKey === key}
+              isSelected={selectedMeshKeys.includes(key)}
               isHidden={!!hidden[key]}
-              onSelect={() => {
-                useSelectionStore.getState().selectWall(w);
-                selectMesh(key);
+              onSelect={(shift) => {
+                if (!shift) useSelectionStore.getState().selectWall(w);
+                selectMesh(key, shift);
               }}
               onToggle={() => toggle(key)}
               onDelete={() => deleteWall(w)}
@@ -67,17 +67,17 @@ export function SceneOutliner() {
               <div style={spaceTitleStyle}>{sp.name || `공간 ${sp.spaceIndex}`}</div>
               <Row
                 label="└ 바닥"
-                isSelected={selectedMeshKey === floorKey}
+                isSelected={selectedMeshKeys.includes(floorKey)}
                 isHidden={!!hidden[floorKey]}
-                onSelect={() => selectMesh(floorKey)}
+                onSelect={(shift) => selectMesh(floorKey, shift)}
                 onToggle={() => toggle(floorKey)}
                 indent
               />
               <Row
                 label="└ 천장"
-                isSelected={selectedMeshKey === ceilingKey}
+                isSelected={selectedMeshKeys.includes(ceilingKey)}
                 isHidden={!!hidden[ceilingKey]}
-                onSelect={() => selectMesh(ceilingKey)}
+                onSelect={(shift) => selectMesh(ceilingKey, shift)}
                 onToggle={() => toggle(ceilingKey)}
                 indent
               />
@@ -96,6 +96,7 @@ export function SceneOutliner() {
               label={`${kindIcon(l.kind)} ${l.name}`}
               isSelected={selectedLightId === l.id}
               isHidden={!!hidden[key]}
+              // 라이트는 다중 선택 미지원 — shift 무시
               onSelect={() => selectLight(selectedLightId === l.id ? null : l.id)}
               onToggle={() => toggle(key)}
               onDelete={() => removeLight(l.id)}
@@ -123,7 +124,8 @@ function Row({
   label: string;
   isSelected: boolean;
   isHidden: boolean;
-  onSelect: () => void;
+  /** Shift 키 여부 전달 — multi-select 분기용 (light row 는 무시) */
+  onSelect: (shift?: boolean) => void;
   onToggle: () => void;
   onDelete?: () => void;
   indent?: boolean;
@@ -138,7 +140,7 @@ function Row({
       }}
     >
       <span
-        onClick={onSelect}
+        onClick={(e) => onSelect(e.shiftKey)}
         style={{
           flex: 1,
           cursor: 'pointer',
