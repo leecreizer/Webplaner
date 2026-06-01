@@ -56,21 +56,23 @@ export function PostFX() {
           skip 방지. radius/intensity 만 store 에 매핑, 나머지는 라이브러리 디폴트. */}
       {gtaoEnabled ? (
         <SSAO
-          // pmndrs SSAOEffect 는 mount 시점 props 만 적용 — store 슬라이더 변경 시
-          // reactive 안 됨. key 에 모든 값 해시 → 변경마다 강제 remount 로 새 인스턴스.
+          // 슬라이더 reactive — key 로 강제 remount
           key={`ssao-${gtaoIntensity}-${gtaoRadius}-${gtaoDistanceFalloff}-${gtaoThickness}-${gtaoScale}`}
           blendFunction={BlendFunction.MULTIPLY}
-          samples={31}
-          rings={4}
-          radius={Math.max(0.05, gtaoRadius * 30)}
-          intensity={Math.max(1, gtaoIntensity * 30)}
-          luminanceInfluence={0.7}
+          samples={32}
+          rings={7}
+          // 인테리어 스케일 (~5m 룸) 자연스러운 GTAO-like 효과로 조정.
+          // intensity: 슬라이더 1.0 → SSAO intensity 1.0 (자연스러운 모서리 darken)
+          radius={Math.max(0.05, gtaoRadius)}
+          intensity={Math.max(0.1, gtaoIntensity)}
+          luminanceInfluence={0.6}
           distanceScaling={true}
-          bias={0.025}
-          worldDistanceThreshold={Math.max(1, gtaoDistanceFalloff * 30)}
-          worldDistanceFalloff={Math.max(1, gtaoDistanceFalloff * 30)}
-          worldProximityThreshold={Math.max(1, gtaoThickness * 5)}
-          worldProximityFalloff={Math.max(1, gtaoThickness * 5)}
+          bias={0.05}
+          // 픽셀 단위 거리 임계 — 너무 크면 SSAO 가 거의 안 보임, 작으면 acne
+          worldDistanceThreshold={20}
+          worldDistanceFalloff={5}
+          worldProximityThreshold={Math.max(0.1, gtaoThickness)}
+          worldProximityFalloff={Math.max(0.1, gtaoThickness)}
         />
       ) : (
         <></>
