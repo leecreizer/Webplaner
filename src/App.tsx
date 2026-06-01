@@ -250,7 +250,9 @@ function SunPathtracerProxy({
     if (!ref.current) return;
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const l = ref.current as any;
-    l.radius = softness * 0.06; // 50m 거리에서 penumbra 각 ≈ softness*0.07°
+    // 50m 거리 기준: radius = softness×0.35 → softness 5≈1.7m(2°,크리스프), 30≈10.5m(12°,매우
+    // 소프트). 0.06 은 너무 작아 시각 변화가 없었음.
+    l.radius = softness * 0.35;
     l.decay = 0;
     l.distance = 0;
   }, [softness]);

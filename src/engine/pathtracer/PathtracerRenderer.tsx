@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { useFrame, useThree } from '@react-three/fiber';
 import { WebGLPathTracer } from 'three-gpu-pathtracer';
 import { useLightingStore } from '@/engine/stores/lightingStore';
+import { useCustomLightStore } from '@/engine/stores/customLightStore';
 import { useLayoutStore } from '@/domain/state/layoutStore';
 
 /**
@@ -28,9 +29,27 @@ export function PathtracerRenderer() {
   const wallsLen = useLayoutStore((s) => s.walls.length);
   const spacesLen = useLayoutStore((s) => s.spaces.length);
 
+  // ── PT 가 setScene 이후 다시 읽지 않는 광원/환경 파라미터들 ──
+  // 이 값이 바뀌면 updateLights/updateEnvironment + reset 으로 재반영해야 함 (안 그러면
+  // 슬라이더(소프트니스/강도/방향/env)를 바꿔도 화면이 옛 상태에 멈춰 있음).
+  const sunIntensity = useLightingStore((s) => s.intensity);
+  const shadowSoftness = useLightingStore((s) => s.shadowSoftness);
+  const sunVisible = useLightingStore((s) => s.sunVisible);
+  const azimuth = useLightingStore((s) => s.azimuth);
+  const elevation = useLightingStore((s) => s.elevation);
+  const envIntensity = useLightingStore((s) => s.environmentIntensity);
+  const customLights = useCustomLightStore((s) => s.lights);
+
   const { gl, scene, camera } = useThree();
   const ptRef = useRef<WebGLPathTracer | null>(null);
+  const lightDirty = useRef(false);
   const [samples, setSamples] = useState(0);
+
+  // 광원/환경 파라미터 변경 → 다음 frame 에 재읽기 표시 (effect 순서상 light 객체가 먼저
+  // 갱신된 뒤 useFrame 에서 처리되도록 dirty flag 만 set).
+  useEffect(() => {
+    lightDirty.current = true;
+  }, [sunIntensity, shadowSoftness, sunVisible, azimuth, elevation, envIntensity, customLights]);
 
   // 인스턴스 생성/파기
   useEffect(() => {
@@ -148,6 +167,15 @@ export function PathtracerRenderer() {
       if (moved) {
         prevCamKey.current = key;
         if (typeof ptAny.updateCamera === 'function') ptAny.updateCamera();
+      }
+      // 광원/환경 변경 반영 — setScene 이후 PT 는 자동으로 다시 안 읽으므로 명시적 갱신.
+      // effect 가 dirty 를 set 한 뒤 이 frame 에서 처리 (light 객체는 이미 갱신된 상태).
+      if (lightDirty.current) {
+        lightDirty.current = false;
+        ptAny.updateLights?.();
+        ptAny.updateEnvironment?.();
+        ptAny.updateCamera?.(); // 누적 reset — 새 광원으로 다시 수렴
+        setSamples(0);
       }
       // 정지 상태면 frame 당 여러 sample 누적 → 벽시계 기준 수렴 가속 (60fps 유지보다
       // 빠른 수렴 우선). 움직이는 중엔 1회만 (반응성 우선). 정지 8 pass = 깨끗해지는 속도 ↑.
