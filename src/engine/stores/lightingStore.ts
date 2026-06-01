@@ -224,7 +224,8 @@ const DEFAULTS = {
 
   castShadow: true,
   shadowQuality: 'high' as ShadowQuality,
-  shadowSoftness: 6,
+  // 12 = 약 9cm penumbra (mapSize 4096 기준). 6 은 너무 하드해 면도날 그림자.
+  shadowSoftness: 12,
   // 폐쇄 공간 어둠 강화 — effectiveAmbient = ambientIntensity * (1 - 0.85*0.7) ≈ 0.06
   shadowStrength: 0.85,
   shadowBias: -0.0005,

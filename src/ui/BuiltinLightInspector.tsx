@@ -48,7 +48,7 @@ function SunInspector() {
       </Section>
       <Section title="그림자">
         <CheckboxField label="그림자 캐스팅" checked={s.castShadow} onChange={s.setCastShadow} />
-        <NumberField label="소프트니스" value={s.shadowSoftness} min={0} max={20} step={1} onChange={s.setShadowSoftness} />
+        <NumberField label="소프트니스" value={s.shadowSoftness} min={0} max={30} step={1} onChange={s.setShadowSoftness} />
         <NumberField label="그림자 강도" value={s.shadowStrength} min={0} max={1.2} step={0.05} onChange={s.setShadowStrength} />
         <ColorField label="그림자 색" value={s.shadowColor} onChange={s.setShadowColor} />
       </Section>

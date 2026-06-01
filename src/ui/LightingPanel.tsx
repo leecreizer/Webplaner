@@ -84,7 +84,7 @@ export function LightingPanel() {
           <Section title="그림자">
             <Checkbox label="그림자 캐스팅" checked={s.castShadow} onChange={s.setCastShadow} />
             <Select label="품질" value={s.shadowQuality} options={SHADOW_QUALITIES} onChange={s.setShadowQuality} />
-            <Slider label="소프트니스" min={0} max={20} step={1} value={s.shadowSoftness} onChange={s.setShadowSoftness} />
+            <Slider label="소프트니스" min={0} max={30} step={1} value={s.shadowSoftness} onChange={s.setShadowSoftness} />
             <Slider label="그림자 강도" min={0} max={1.2} step={0.05} value={s.shadowStrength} onChange={s.setShadowStrength} />
             <ColorRow label="그림자 색" value={s.shadowColor} onChange={s.setShadowColor} />
           </Section>

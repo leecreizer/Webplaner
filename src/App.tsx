@@ -196,7 +196,8 @@ function SceneLights() {
         castShadow={sunVisible && castShadow}
         shadow-mapSize={[mapSize, mapSize]}
         shadow-radius={shadowSoftness}
-        shadow-blurSamples={Math.max(4, Math.min(25, Math.round(shadowSoftness * 2)))}
+        // blurSamples 많을수록 부드러운 penumbra(줄무늬 없이). cap 25→32, 계수 ×2→×3.
+        shadow-blurSamples={Math.max(8, Math.min(32, Math.round(shadowSoftness * 3)))}
         shadow-bias={shadowBias}
         shadow-normalBias={shadowNormalBias}
         shadow-camera-left={-shadowFrustumSize}
