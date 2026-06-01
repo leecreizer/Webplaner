@@ -52,6 +52,38 @@ function SunInspector() {
         <NumberField label="그림자 강도" value={s.shadowStrength} min={0} max={1.2} step={0.05} onChange={s.setShadowStrength} />
         <ColorField label="그림자 색" value={s.shadowColor} onChange={s.setShadowColor} />
       </Section>
+      <Section title="그림자 정밀도 (offset / 계단)">
+        <NumberField
+          label="bias (×0.0001)"
+          value={Math.round(s.shadowBias * 10000)}
+          min={-50}
+          max={10}
+          step={1}
+          onChange={(v) => s.setShadowBias(v / 10000)}
+        />
+        <NumberField
+          label="normalBias"
+          value={s.shadowNormalBias}
+          min={0}
+          max={0.2}
+          step={0.005}
+          onChange={s.setShadowNormalBias}
+        />
+        <NumberField
+          label="frustum 반경(m)"
+          value={s.shadowFrustumSize}
+          min={3}
+          max={50}
+          step={1}
+          onChange={s.setShadowFrustumSize}
+        />
+        <div style={{ fontSize: 10, opacity: 0.55, marginTop: 4, lineHeight: 1.4 }}>
+          • bias 가 음수로 클수록 그림자가 객체에서 *떨어져 시작* (peter-panning).
+          0 에 가까우면 acne (얼룩).
+          <br />• normalBias 는 법선 방향 offset — peter-panning 보완.
+          <br />• frustum 작을수록 정밀도 ↑ (계단 ↓), 단 그림자 범위 ↓.
+        </div>
+      </Section>
     </>
   );
 }

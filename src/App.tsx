@@ -158,6 +158,9 @@ function SceneLights() {
   const shadowQuality = useLightingStore((s) => s.shadowQuality);
   const shadowSoftness = useLightingStore((s) => s.shadowSoftness);
   const shadowStrength = useLightingStore((s) => s.shadowStrength);
+  const shadowBias = useLightingStore((s) => s.shadowBias);
+  const shadowNormalBias = useLightingStore((s) => s.shadowNormalBias);
+  const shadowFrustumSize = useLightingStore((s) => s.shadowFrustumSize);
   const shadowColor = useLightingStore((s) => s.shadowColor);
   const giMode = useLightingStore((s) => s.giMode);
   const giIntensity = useLightingStore((s) => s.giIntensity);
@@ -185,21 +188,21 @@ function SceneLights() {
         intensity={hemiActive ? giIntensity * hemiFactor : 0}
       />
       <directionalLight
-        // mapSize/cast/softness 중 하나라도 바뀌면 강제 remount — shadow map + radius 즉시 반영.
-        // PCFSoftShadowMap은 radius를 무시하므로 Canvas의 shadow type을 PCFShadowMap으로 변경했음.
-        key={`dir-${mapSize}-${castShadow ? 1 : 0}-${shadowSoftness}`}
+        // mapSize/cast/softness/frustum 중 하나라도 바뀌면 강제 remount — shadow map + radius
+        // + camera frustum 모두 light 생성 시점에만 적용되므로 즉시 반영 위해 key 사용.
+        key={`dir-${mapSize}-${castShadow ? 1 : 0}-${shadowSoftness}-${shadowFrustumSize}`}
         position={position}
         intensity={sunVisible ? intensity : 0}
         castShadow={sunVisible && castShadow}
         shadow-mapSize={[mapSize, mapSize]}
         shadow-radius={shadowSoftness}
         shadow-blurSamples={Math.max(4, Math.min(25, Math.round(shadowSoftness * 2)))}
-        shadow-bias={-0.0005}
-        shadow-normalBias={0.02}
-        shadow-camera-left={-15}
-        shadow-camera-right={15}
-        shadow-camera-top={15}
-        shadow-camera-bottom={-15}
+        shadow-bias={shadowBias}
+        shadow-normalBias={shadowNormalBias}
+        shadow-camera-left={-shadowFrustumSize}
+        shadow-camera-right={shadowFrustumSize}
+        shadow-camera-top={shadowFrustumSize}
+        shadow-camera-bottom={-shadowFrustumSize}
         shadow-camera-near={0.5}
         shadow-camera-far={100}
       />

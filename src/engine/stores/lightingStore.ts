@@ -56,6 +56,12 @@ export interface LightingState {
   shadowQuality: ShadowQuality;
   /** 그림자 가장자리 부드러움 (PCFSoft `radius` — 큰 값 = 더 부드러움). */
   shadowSoftness: number;
+  /** shadow-bias — 음수 offset. 너무 크면 그림자가 객체에서 떨어져 시작, 너무 작으면 acne. */
+  shadowBias: number;
+  /** shadow-normalBias — 법선 방향 offset. peter-panning 보정. */
+  shadowNormalBias: number;
+  /** shadow camera frustum 반경(m). 인테리어 ~10m, 야외 ~30m. 클수록 정밀도 ↓. */
+  shadowFrustumSize: number;
   /** 그림자 강도 (0=거의 없음, 1=완전 검정). ambientLight 강도를 역으로 줄여 darkening. */
   shadowStrength: number;
   /** 그림자(=음영) 색. ambientLight의 color로 적용 — 그림자 진 영역의 색조. */
@@ -145,6 +151,9 @@ export interface LightingState {
   setShadowQuality: (v: ShadowQuality) => void;
   setShadowSoftness: (v: number) => void;
   setShadowStrength: (v: number) => void;
+  setShadowBias: (v: number) => void;
+  setShadowNormalBias: (v: number) => void;
+  setShadowFrustumSize: (v: number) => void;
   setShadowColor: (v: string) => void;
   setGiMode: (v: GIMode) => void;
   setGiIntensity: (v: number) => void;
@@ -218,6 +227,9 @@ const DEFAULTS = {
   shadowSoftness: 6,
   // 폐쇄 공간 어둠 강화 — effectiveAmbient = ambientIntensity * (1 - 0.85*0.7) ≈ 0.06
   shadowStrength: 0.85,
+  shadowBias: -0.0005,
+  shadowNormalBias: 0.02,
+  shadowFrustumSize: 15,
   shadowColor: '#000000',
 
   // HemisphereLight 도 ambient 와 동일하게 전역 균일 — 디폴트 0.2 로 낮춤. 천창/실외 효과
@@ -296,6 +308,9 @@ export const useLightingStore = create<LightingState>((set) => ({
   setShadowQuality: (v) => set({ shadowQuality: v }),
   setShadowSoftness: (v) => set({ shadowSoftness: v }),
   setShadowStrength: (v) => set({ shadowStrength: v }),
+  setShadowBias: (v) => set({ shadowBias: v }),
+  setShadowNormalBias: (v) => set({ shadowNormalBias: v }),
+  setShadowFrustumSize: (v) => set({ shadowFrustumSize: v }),
   setShadowColor: (v) => set({ shadowColor: v }),
   setGiMode: (v) => set({ giMode: v }),
   setGiIntensity: (v) => set({ giIntensity: v }),
