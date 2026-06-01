@@ -60,31 +60,58 @@ export function PathtracerRenderer() {
     };
   }, [enabled, gl, bounces]);
 
-  // scene/camera/mesh 변경 시 setScene + reset. setSceneAsync 가 있으면 BVH 비동기 빌드
-  // (큰 씬에서 메인 스레드 블록 방지) — 우선 시도 후 동기 fallback.
+  // scene/camera/mesh 변경 시 setScene + reset.
+  //
+  // *핵심*: r3f 가 mesh 를 mount 하기 *전* 에 setScene 이 호출되면 빈 scene 으로 BVH 가
+  // 빌드되어 path tracer 결과가 영원히 검정(empty target)이 된다. requestAnimationFrame 으로
+  // *한 frame 지연* + scene mesh count 검증으로 mount 완료 보장.
   useEffect(() => {
     const pt = ptRef.current;
     if (!enabled || !pt) return;
     let cancelled = false;
-    (async () => {
+    let raf: number | null = null;
+    const runSetScene = async () => {
       try {
+        // mesh 가 아직 없으면 다음 frame 까지 대기 — 최대 30 frame
+        let attempts = 0;
+        while (!cancelled && attempts < 30) {
+          let meshCount = 0;
+          scene.traverse((o) => {
+            if ((o as { isMesh?: boolean }).isMesh) meshCount++;
+          });
+          if (meshCount > 0) break;
+          await new Promise<void>((r) => {
+            raf = requestAnimationFrame(() => r());
+          });
+          attempts++;
+        }
+        if (cancelled) return;
+        let meshCountFinal = 0;
+        scene.traverse((o) => {
+          if ((o as { isMesh?: boolean }).isMesh) meshCountFinal++;
+        });
+        // setSceneAsync 는 setBVHWorker 가 사전 설정되어야 동작 — 우리는 worker 안 쓰고
+        // 동기 setScene 으로 메인 스레드 BVH 빌드 (씬이 수십 mesh 정도라 OK).
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         const ptAny = pt as any;
-        if (typeof ptAny.setSceneAsync === 'function') {
-          await ptAny.setSceneAsync(scene, camera);
-        } else {
-          pt.setScene(scene, camera);
-        }
+        pt.setScene(scene, camera);
         if (cancelled) return;
         ptAny.reset?.();
         setSamples(0);
-        console.log('[Pathtracer] setScene OK', { walls: wallsLen, spaces: spacesLen });
+        console.log('[Pathtracer] setScene OK', {
+          walls: wallsLen,
+          spaces: spacesLen,
+          meshes: meshCountFinal,
+          attempts,
+        });
       } catch (e) {
         console.warn('[Pathtracer] setScene 실패', e);
       }
-    })();
+    };
+    runSetScene();
     return () => {
       cancelled = true;
+      if (raf !== null) cancelAnimationFrame(raf);
     };
   }, [enabled, scene, camera, wallsLen, spacesLen]);
 

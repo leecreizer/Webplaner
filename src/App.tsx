@@ -198,13 +198,16 @@ function SceneEnvironment() {
   return <Environment preset={preset} background={background} environmentIntensity={intensity} />;
 }
 
-/** 그리드 — store의 컬러/투명도/표시 여부 바인딩. */
+/** 그리드 — store의 컬러/투명도/표시 여부 바인딩.
+ *  Path tracer 활성 시는 자동 비활성 — Grid 의 ShaderMaterial 이 path tracer 의 BVH 에
+ *  포함되면 radius≈14m 거대 plane 으로 카메라 view 전체를 가려 wall/floor 가 안 보임. */
 function SceneGrid() {
   const show = useViewStore((s) => s.showGrid);
   const cellColor = useViewStore((s) => s.gridCellColor);
   const sectionColor = useViewStore((s) => s.gridSectionColor);
   const opacity = useViewStore((s) => s.gridOpacity);
-  if (!show) return null;
+  const ptEnabled = useLightingStore((s) => s.pathtracerEnabled);
+  if (!show || ptEnabled) return null;
   return (
     <Grid
       position={[0, -0.01, 0]}
