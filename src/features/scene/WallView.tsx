@@ -166,11 +166,19 @@ export function WallView({ wall, color = '#cccccc' }: { wall: Wall; color?: stri
           : meshOverride?.color ?? color;
 
   const onPointerDown = (e: ThreeEvent<PointerEvent>) => {
-    // 3D 모드는 wall 인터랙티브 전면 비활성 — 카메라 회전 시 wall 클릭 충돌 방지
-    if (drawingEnabled || !is2D || !wall.startNode || !wall.endNode) return;
+    if (drawingEnabled || !wall.startNode || !wall.endNode) return;
     // 좌클릭(button=0)만 선택/드래그 — 우클릭/가운데 버튼은 카메라 조작에 양보
     if (e.button !== 0) return;
     e.stopPropagation();
+    // 3D 모드 — 클릭만 = 선택 토글. 드래그/삭제 등 편집은 비활성 (카메라 회전 충돌 +
+    // 데이터 손상 방지). 에디트 모드(CSG)는 EditTool 이 별도로 처리.
+    if (!is2D) {
+      const cur = useSelectionStore.getState().selectedWall;
+      const next = cur === wall ? null : wall;
+      useSelectionStore.getState().selectWall(next);
+      selectMesh(next ? myMeshKey : null);
+      return;
+    }
     const downX = e.clientX;
     const downY = e.clientY;
     let didDrag = false;
