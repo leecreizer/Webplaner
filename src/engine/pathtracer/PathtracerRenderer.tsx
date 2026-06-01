@@ -60,22 +60,37 @@ export function PathtracerRenderer() {
     };
   }, [enabled, gl, bounces]);
 
-  // scene/camera/mesh 변경 시 setScene + reset
+  // scene/camera/mesh 변경 시 setScene + reset. setSceneAsync 가 있으면 BVH 비동기 빌드
+  // (큰 씬에서 메인 스레드 블록 방지) — 우선 시도 후 동기 fallback.
   useEffect(() => {
     const pt = ptRef.current;
     if (!enabled || !pt) return;
-    try {
-      pt.setScene(scene, camera);
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const ptAny = pt as any;
-      ptAny.reset?.();
-      setSamples(0);
-      console.log('[Pathtracer] setScene OK', { walls: wallsLen, spaces: spacesLen });
-    } catch (e) {
-      console.warn('[Pathtracer] setScene 실패', e);
-    }
+    let cancelled = false;
+    (async () => {
+      try {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const ptAny = pt as any;
+        if (typeof ptAny.setSceneAsync === 'function') {
+          await ptAny.setSceneAsync(scene, camera);
+        } else {
+          pt.setScene(scene, camera);
+        }
+        if (cancelled) return;
+        ptAny.reset?.();
+        setSamples(0);
+        console.log('[Pathtracer] setScene OK', { walls: wallsLen, spaces: spacesLen });
+      } catch (e) {
+        console.warn('[Pathtracer] setScene 실패', e);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
   }, [enabled, scene, camera, wallsLen, spacesLen]);
 
+  // priority=2 — `@react-three/postprocessing` 의 EffectComposer 도 priority=1 로 동작하므로
+  // path tracer 가 그 *다음* 호출되어 캔버스를 덮어쓰도록 한다. (PostFXGate 가 이미 비활성화
+  // 하지만 이중 안전).
   useFrame(() => {
     const pt = ptRef.current;
     if (!enabled || !pt) return;
@@ -83,7 +98,6 @@ export function PathtracerRenderer() {
       pt.renderSample();
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const s = (pt as any).samples ?? 0;
-      // 매 프레임 set은 과부담이라 10단위 변화 시만
       if (Math.floor(s) % 10 === 0 && Math.floor(s) !== Math.floor(samples)) {
         setSamples(s);
         if (Math.floor(s) > 0 && Math.floor(s) % 30 === 0) {
@@ -93,7 +107,7 @@ export function PathtracerRenderer() {
     } catch (e) {
       console.warn('[Pathtracer] renderSample 실패', e);
     }
-  }, 1);
+  }, 2);
 
   // 상태 overlay — 활성 시 우상단에 sample 카운트
   useEffect(() => {

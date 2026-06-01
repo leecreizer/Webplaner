@@ -90,8 +90,11 @@ export default function App({
           <NodeMarkers />
           <SunGizmo />
 
-          {/* PostFX는 마지막 자식 — 모든 효과 후 적용 */}
-          <PostFX />
+          {/* Path tracer 활성 시 PostFX 비활성 — 둘 다 priority=1 useFrame 으로 캔버스에
+              그리려 하면 호출 순서가 비결정적이라 path tracer 결과가 composer 에 덮어
+              씌워진다. path tracer 가 이미 GI/AO/bloom-like glow 를 자체 계산하므로
+              postfx 가 빠져도 시각 손실은 최소. */}
+          <PostFXGate />
         </Canvas>
       </div>
     </HostProvider>
@@ -250,6 +253,13 @@ function SyncRenderer({ exposure, toneMapping }: { exposure: number; toneMapping
  * - **우클릭 드래그**: 회전(3D) / PAN(2D)
  * - **휠**: ZOOM
  */
+/** Path tracer 활성 시 PostFX 자동 비활성 — 두 useFrame priority 충돌 회피. */
+function PostFXGate() {
+  const ptEnabled = useLightingStore((s) => s.pathtracerEnabled);
+  if (ptEnabled) return null;
+  return <PostFX />;
+}
+
 function OrbitControlsConditional() {
   const viewMode = useViewStore((s) => s.viewMode);
   const is2D = viewMode === '2D';
