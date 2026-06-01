@@ -175,16 +175,23 @@ const DEFAULTS = {
   azimuth: 30,
   elevation: 55,
   distance: 18,
-  intensity: 1.2,
-  ambientIntensity: 0.4,
+  // 햇빛 강도 — 간접광을 줄였으므로 직사광을 강화해 들어오는 곳은 밝게, 안 들어오는 곳은
+  // (폐쇄 공간) 어둡게 대비를 줌.
+  intensity: 2.5,
+  // 전역 균일 ambient — 그림자와 무관하게 모든 mesh 에 들어가므로 0.15 로 낮춰 폐쇄 공간이
+  // 자동으로 어두워지게 한다. 사용자가 너무 어두우면 panel 에서 높이면 됨.
+  ambientIntensity: 0.15,
 
   castShadow: true,
   shadowQuality: 'high' as ShadowQuality,
   shadowSoftness: 6,
-  shadowStrength: 0.7,
+  // 폐쇄 공간 어둠 강화 — effectiveAmbient = ambientIntensity * (1 - 0.85*0.7) ≈ 0.06
+  shadowStrength: 0.85,
   shadowColor: '#000000',
 
-  giIntensity: 0.6,
+  // HemisphereLight 도 ambient 와 동일하게 전역 균일 — 디폴트 0.2 로 낮춤. 천창/실외 효과
+  // 필요하면 panel 에서 높임.
+  giIntensity: 0.2,
   giSkyColor: '#e8f0ff',
   giGroundColor: '#b08560',
 
@@ -200,7 +207,9 @@ const DEFAULTS = {
 
   environmentPreset: 'apartment' as EnvironmentPreset,
   environmentBackground: false,
-  environmentIntensity: 1.0,
+  // HDR Environment IBL — 가장 큰 간접광 원천. mesh 의 envMap 으로 들어가 폐쇄/개방 무관 균일.
+  // 디폴트 0.3 으로 낮춤. 야외/스튜디오 룩 원하면 panel 에서 높임.
+  environmentIntensity: 0.3,
 
   toneMapping: 'aces' as ToneMappingMode,
   toneMappingExposure: 1.0,
@@ -208,10 +217,11 @@ const DEFAULTS = {
   bloomEnabled: true,
   bloomIntensity: 0.35,
 
+  // N8AO — 폐쇄 공간 모서리/구석을 어둡게. 간접광 차폐 효과를 시뮬해 실내 깊은 공간 어둠을 강화.
   ssaoEnabled: true,
-  ssaoIntensity: 3.0,
-  aoRadius: 0.5,
-  aoDistanceFalloff: 0.2,
+  ssaoIntensity: 5.0,
+  aoRadius: 1.2,
+  aoDistanceFalloff: 0.5,
 
   // GTAO default off — 사용자가 명시적으로 토글. N8AO와 별개로 동작.
   gtaoEnabled: false,
