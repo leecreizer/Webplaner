@@ -4,9 +4,9 @@ import {
   type EnvironmentPreset,
   type ShadowQuality,
   type ToneMappingMode,
-} from '../drawing/lightingStore';
-import { useViewStore } from '../drawing/viewStore';
-import { useCustomLightStore, type LightKind, type CustomLight } from '../drawing/customLightStore';
+} from '@/engine/stores/lightingStore';
+import { useViewStore } from '@/engine/stores/viewStore';
+import { useCustomLightStore, type LightKind, type CustomLight } from '@/engine/stores/customLightStore';
 
 const LIGHT_KINDS: { kind: LightKind; label: string }[] = [
   { kind: 'point', label: '포인트 (옴니)' },

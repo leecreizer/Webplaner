@@ -1,8 +1,8 @@
 import { Vector3 } from 'three';
-import { Node } from '../structures/Node';
-import { Wall } from '../structures/Wall';
-import { useLayoutStore, layoutRegistry } from '../structures/state';
-import { buildSpaces } from '../layout/SpaceBuilder';
+import { Node } from '@/domain/structures/Node';
+import { Wall } from '@/domain/structures/Wall';
+import { useLayoutStore, layoutRegistry } from '@/domain/state/layoutStore';
+import { buildSpaces } from '@/domain/layout/SpaceBuilder';
 
 /**
  * 데모용 샘플 평면도를 현재 Zustand 스토어에 주입한다.

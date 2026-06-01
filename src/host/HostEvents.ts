@@ -1,5 +1,5 @@
-import type { PlanSaveData } from '../saveload/PlanSaveData';
-import type { PlaceProductParam } from '../products/ProductTypes';
+import type { PlanSaveData } from '@/persistence/PlanSaveData';
+import type { PlaceProductParam } from '@/domain/products/ProductTypes';
 
 /**
  * HomePlanner3 → 부모 React 호스트로 전달되는 *outgoing* 이벤트 타입.

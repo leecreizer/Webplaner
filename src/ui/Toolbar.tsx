@@ -1,10 +1,10 @@
 import { useState } from 'react';
-import { useWallDrawingStore } from '../drawing/wallDrawingStore';
-import { useViewStore } from '../drawing/viewStore';
-import { useLayoutStore, layoutRegistry } from '../structures/state';
-import { buildSpaces } from '../layout/SpaceBuilder';
-import { useCustomLightStore, type LightKind } from '../drawing/customLightStore';
-import { useEditStore } from '../drawing/editStore';
+import { useWallDrawingStore } from '@/features/drawing/wallDrawingStore';
+import { useViewStore } from '@/engine/stores/viewStore';
+import { useLayoutStore, layoutRegistry } from '@/domain/state/layoutStore';
+import { buildSpaces } from '@/domain/layout/SpaceBuilder';
+import { useCustomLightStore, type LightKind } from '@/engine/stores/customLightStore';
+import { useEditStore } from '@/features/editing/editStore';
 
 const LIGHT_OPTIONS: { kind: LightKind; label: string; desc: string }[] = [
   { kind: 'point', label: '포인트 (옴니)', desc: '360° 점 광원' },

@@ -1,6 +1,6 @@
 import { PerspectiveCamera, OrthographicCamera } from 'three';
-import { useLayoutStore } from '../structures/state';
-import { vector3ToVectorData } from '../saveload/PlanSaveData';
+import { useLayoutStore } from '@/domain/state/layoutStore';
+import { vector3ToVectorData } from '@/persistence/PlanSaveData';
 import type {
   CameraSaveData,
   PlanSaveData,
@@ -10,11 +10,11 @@ import type {
   SpaceData,
   ProductData,
   BearingTypeStr,
-} from '../saveload/PlanSaveData';
-import { BearingType } from '../structures/Wall';
-import type { Wall } from '../structures/Wall';
-import type { Space } from '../structures/Space';
-import type { ProductInfo } from '../products/ProductInfo';
+} from '@/persistence/PlanSaveData';
+import { BearingType } from '@/domain/structures/Wall';
+import type { Wall } from '@/domain/structures/Wall';
+import type { Space } from '@/domain/structures/Space';
+import type { ProductInfo } from '@/domain/products/ProductInfo';
 
 /**
  * 현재 평면도 상태 + 카메라 상태 → `RenderPlanSaveData` JSON DTO 빌더.

@@ -20,26 +20,28 @@ Unity 6.3 `homeplanner3-unity-web` 프로젝트의 Three.js + React 마이그레
 - **zustand** — 평면도 도메인 상태 스토어 (Unity의 static AllNodes/AllWalls 대체)
 - **three** — 렌더링 코어
 
-## 폴더 구조 (Unity `Assets/Scripts/` 미러)
+## 아키텍처
+
+상세 레이어 분류 + 모듈별 책임은 [ARCHITECTURE.md](ARCHITECTURE.md) 참고.
 
 ```
 src/
-├── main.tsx               # 엔트리
-├── App.tsx                # 부모 호스트가 임베드하는 루트 컴포넌트
-├── saveload/              # PlanSaveData DTO + JSON 직렬화
-├── structures/            # Wall/Node/Space + 상태 스토어
-├── utils/                 # Math 상수, Vector 헬퍼, 메시 헬퍼
-├── layout/                # 공간 인식·인접관계 (미구현)
-├── drawing/               # MeshGenerator, 와이어프레임 (미구현)
-├── camera/                # OrbitControls 래퍼, FOV/DOF (미구현)
-├── products/              # 가구·문/창 배치 로직 (미구현)
-├── undoredo/              # 커맨드 패턴 (미구현)
-├── tasks/                 # 비동기 작업 (미구현)
-├── networking/            # Snapit 프록시 호출 (미구현)
-├── ui/                    # 패널·버튼 (미구현)
-├── input/                 # 포인터/키보드 핸들러 (미구현)
-└── datamanager/           # 외부 이벤트 핸들러 (미구현)
+├── ui/            # 사용자 패널 (Toolbar, LightingPanel)
+├── features/      # 인터랙션 (scene, drawing, editing, selection, undoredo)
+├── engine/        # Three.js 렌더링 (lighting, postfx, pathtracer, mesh, stores)
+├── domain/        # 도메인 모델 (structures, layout, products, camera, state)
+├── lib/           # 순수 유틸 (math, constants)
+├── host/          # 외부 호스트 bridge
+├── networking/    # Snapit 백엔드 client
+├── persistence/   # Plan 직렬화
+├── input/         # 입력 추상화
+├── tasks/         # 워크플로 상태머신
+├── App.tsx        # 루트 (Canvas + 레이어 wiring)
+└── main.tsx       # 엔트리
 ```
+
+**의존 방향**: UI → Features → Engine → Domain → Lib. 단방향 강제 (역방향 import 금지).
+**공공 API**: 각 레이어의 `index.ts`에서 export — 다른 프로젝트에서 `@/engine`, `@/domain` 등으로 부분만 떼어 사용 가능.
 
 ## 개발
 

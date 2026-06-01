@@ -1,12 +1,12 @@
 import type { HostEventHandlers, HostResult } from './HostEvents';
 import type { HostCommands } from './HostCommands';
-import type { PlanSaveData } from '../saveload/PlanSaveData';
-import type { PlaceProductParam } from '../products/ProductTypes';
-import { SpaceManager } from '../layout/SpaceManager';
-import { UndoRedoManager } from '../undoredo/UndoRedoManager';
-import { LoadPlanCommand } from '../undoredo/commands/LoadPlanCommand';
-import { DeleteAllWallsCommand } from '../undoredo/commands/DeleteAllWallsCommand';
-import { buildPlanData } from '../networking/RenderPlanBuilder';
+import type { PlanSaveData } from '@/persistence/PlanSaveData';
+import type { PlaceProductParam } from '@/domain/products/ProductTypes';
+import { SpaceManager } from '@/domain/layout/SpaceManager';
+import { UndoRedoManager } from '@/features/undoredo/UndoRedoManager';
+import { LoadPlanCommand } from '@/features/undoredo/commands/LoadPlanCommand';
+import { DeleteAllWallsCommand } from '@/features/undoredo/commands/DeleteAllWallsCommand';
+import { buildPlanData } from '@/networking/RenderPlanBuilder';
 
 /**
  * HomePlanner3 ↔ 부모 React 호스트 통신 브리지.

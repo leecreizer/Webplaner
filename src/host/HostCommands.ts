@@ -1,5 +1,5 @@
-import type { PlanSaveData } from '../saveload/PlanSaveData';
-import type { PlaceProductParam } from '../products/ProductTypes';
+import type { PlanSaveData } from '@/persistence/PlanSaveData';
+import type { PlaceProductParam } from '@/domain/products/ProductTypes';
 
 /**
  * 부모 React 호스트 → HomePlanner3로 보내는 *incoming* 명령 인터페이스.

@@ -7,23 +7,23 @@ import {
   OrthographicCamera,
 } from '@react-three/drei';
 import { PCFShadowMap, ACESFilmicToneMapping, MOUSE } from 'three';
-import { PlanScene } from './drawing/PlanScene';
-import { WallDrawingTool } from './drawing/WallDrawingTool';
+import { PlanScene } from '@/features/scene/PlanScene';
+import { WallDrawingTool } from '@/features/drawing/WallDrawingTool';
 import {
   useLightingStore,
   sphericalToCartesian,
   shadowMapSizeFor,
-} from './drawing/lightingStore';
-import { useViewStore } from './drawing/viewStore';
-import { PostFX } from './drawing/PostFX';
-import { NodeMarkers } from './drawing/NodeMarkers';
-import { SunGizmo } from './drawing/SunGizmo';
-import { SpaceLightmap } from './drawing/SpaceLightmap';
-import { SceneLightProbe } from './drawing/SceneLightProbe';
-import { PathtracerRenderer } from './drawing/PathtracerRenderer';
-import { CustomLights } from './drawing/CustomLights';
-import { EditTool } from './drawing/EditTool';
-import { EditOverlay } from './drawing/EditOverlay';
+} from '@/engine/stores/lightingStore';
+import { useViewStore } from '@/engine/stores/viewStore';
+import { PostFX } from '@/engine/postfx/PostFX';
+import { NodeMarkers } from '@/features/drawing/NodeMarkers';
+import { SunGizmo } from '@/features/scene/SunGizmo';
+import { SpaceLightmap } from '@/engine/lighting/SpaceLightmap';
+import { SceneLightProbe } from '@/engine/lighting/SceneLightProbe';
+import { PathtracerRenderer } from '@/engine/pathtracer/PathtracerRenderer';
+import { CustomLights } from '@/engine/lighting/CustomLights';
+import { EditTool } from '@/features/editing/EditTool';
+import { EditOverlay } from '@/features/editing/EditOverlay';
 import { Toolbar } from './ui/Toolbar';
 import { LightingPanel } from './ui/LightingPanel';
 import { HostProvider } from './host/HostContext';

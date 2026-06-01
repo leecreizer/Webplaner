@@ -1,4 +1,4 @@
-import type { RenderPlanSaveData } from '../saveload/PlanSaveData';
+import type { RenderPlanSaveData } from '@/persistence/PlanSaveData';
 
 /**
  * Snapit (Flask + Gemini + YOLO) 백엔드와 통신하는 HTTP 클라이언트.
