@@ -28,6 +28,7 @@ const ENV_PRESETS: EnvironmentPreset[] = [
   'warehouse',
 ];
 const SHADOW_QUALITIES: ShadowQuality[] = ['low', 'medium', 'high', 'ultra'];
+const GI_MODES = ['hemisphere', 'single-probe', 'probe-grid', 'path-tracer'] as const;
 const TONE_MAPPING_OPTIONS: ToneMappingMode[] = ['none', 'linear', 'reinhard', 'cineon', 'aces', 'agx'];
 
 /**
@@ -89,6 +90,16 @@ export function LightingPanel() {
           </Section>
 
           <Section title="GI (Global Illumination)">
+            <Select
+              label="GI 모드"
+              value={s.giMode}
+              options={GI_MODES as unknown as string[]}
+              onChange={(v) => {
+                s.setGiMode(v as typeof GI_MODES[number]);
+                // path-tracer 모드 선택 시 자동 활성, 다른 모드 시 비활성
+                s.setPathtracerEnabled(v === 'path-tracer');
+              }}
+            />
             <Slider label="GI 강도" min={0} max={2} step={0.05} value={s.giIntensity} onChange={s.setGiIntensity} />
             <ColorRow label="Sky 색 (위)" value={s.giSkyColor} onChange={s.setGiSkyColor} />
             <ColorRow label="Ground 색 (아래)" value={s.giGroundColor} onChange={s.setGiGroundColor} />

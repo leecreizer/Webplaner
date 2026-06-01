@@ -20,6 +20,7 @@ import { NodeMarkers } from '@/features/drawing/NodeMarkers';
 import { SunGizmo } from '@/features/scene/SunGizmo';
 import { SpaceLightmap } from '@/engine/lighting/SpaceLightmap';
 import { SceneLightProbe } from '@/engine/lighting/SceneLightProbe';
+import { IrradianceProbeGrid } from '@/engine/lighting/IrradianceProbeGrid';
 import { PathtracerRenderer } from '@/engine/pathtracer/PathtracerRenderer';
 import { CustomLights } from '@/engine/lighting/CustomLights';
 import { EditTool } from '@/features/editing/EditTool';
@@ -84,6 +85,7 @@ export default function App({
           <PlanScene showCeiling={showCeiling} showProducts={showProducts} />
           <SpaceLightmap />
           <SceneLightProbe />
+          <IrradianceProbeGrid />
           <PathtracerRenderer />
           <CustomLights />
           <EditTool />

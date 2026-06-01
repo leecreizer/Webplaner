@@ -22,6 +22,16 @@ export type ShadowQuality = 'low' | 'medium' | 'high' | 'ultra';
 export type ToneMappingMode = 'none' | 'linear' | 'reinhard' | 'cineon' | 'aces' | 'agx';
 
 /**
+ * GI(Global Illumination) 처리 방식.
+ * - `hemisphere`: HemisphereLight + ambient — 가장 가볍지만 위치 무관 균일.
+ * - `single-probe`: SceneLightProbe — 씬 전체 1개 cube capture → SH IBL.
+ * - `probe-grid`: IrradianceProbeGrid — 공간마다 cube capture → N개 SH 합산 (Monter
+ *   엔진의 irradiance probe grid 개념 — three.js native multi-probe sum 으로 간소화).
+ * - `path-tracer`: GPU Path Tracer — 실시간 ray traced GI, 가장 사실적 / 비쌈.
+ */
+export type GIMode = 'hemisphere' | 'single-probe' | 'probe-grid' | 'path-tracer';
+
+/**
  * 방향 조명(태양광) + 환경광 + 그림자 + 포스트프로세싱 상태.
  *
  * 방향 조명의 위치는 (azimuth, elevation, distance) 구면 좌표로 표현된다.
@@ -47,6 +57,10 @@ export interface LightingState {
   shadowStrength: number;
   /** 그림자(=음영) 색. ambientLight의 color로 적용 — 그림자 진 영역의 색조. */
   shadowColor: string;
+
+  // ===== GI 모드 선택 =========================================
+  /** Global Illumination 처리 방식. 라이팅 패널에서 단일 선택. */
+  giMode: GIMode;
 
   // ===== Fake GI (poor-man's Global Illumination) ===========
   /** GI 강도 (HemisphereLight intensity + AccumulativeShadows 누적 강화). 0이면 비활성. */
@@ -129,6 +143,7 @@ export interface LightingState {
   setShadowSoftness: (v: number) => void;
   setShadowStrength: (v: number) => void;
   setShadowColor: (v: string) => void;
+  setGiMode: (v: GIMode) => void;
   setGiIntensity: (v: number) => void;
   setGiSkyColor: (v: string) => void;
   setGiGroundColor: (v: string) => void;
@@ -194,6 +209,7 @@ const DEFAULTS = {
 
   // HemisphereLight 도 ambient 와 동일하게 전역 균일 — 디폴트 0.2 로 낮춤. 천창/실외 효과
   // 필요하면 panel 에서 높임.
+  giMode: 'hemisphere' as GIMode,
   giIntensity: 0.2,
   giSkyColor: '#e8f0ff',
   giGroundColor: '#b08560',
@@ -263,6 +279,7 @@ export const useLightingStore = create<LightingState>((set) => ({
   setShadowSoftness: (v) => set({ shadowSoftness: v }),
   setShadowStrength: (v) => set({ shadowStrength: v }),
   setShadowColor: (v) => set({ shadowColor: v }),
+  setGiMode: (v) => set({ giMode: v }),
   setGiIntensity: (v) => set({ giIntensity: v }),
   setGiSkyColor: (v) => set({ giSkyColor: v }),
   setGiGroundColor: (v) => set({ giGroundColor: v }),
@@ -273,6 +290,7 @@ export const useLightingStore = create<LightingState>((set) => ({
   setPathtracerBounces: (v) => set({ pathtracerBounces: v }),
   applyPathtracerCinematicPreset: () =>
     set({
+      giMode: 'path-tracer',
       pathtracerEnabled: true,
       pathtracerBounces: 8,
       // HDR env 가 path tracer 의 1차 광원 (창문 빛 시뮬). background 도 켜서 sky 가
