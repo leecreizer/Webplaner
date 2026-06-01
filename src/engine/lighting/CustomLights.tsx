@@ -1,5 +1,14 @@
 import { useEffect, useRef } from 'react';
-import { Mesh, Object3D, Vector3 } from 'three';
+import { useThree } from '@react-three/fiber';
+import {
+  Mesh,
+  Object3D,
+  PointLightHelper,
+  SpotLightHelper,
+  Vector3,
+  type PointLight,
+  type SpotLight,
+} from 'three';
 import { TransformControls } from '@react-three/drei';
 import { RectAreaLightUniformsLib } from 'three/examples/jsm/lights/RectAreaLightUniformsLib.js';
 import { useCustomLightStore, type CustomLight } from '@/engine/stores/customLightStore';
@@ -52,29 +61,9 @@ function CustomLightInstance({ light: l, selected }: { light: CustomLight; selec
     <group>
       {/* 라이트 본체 */}
       {l.kind === 'point' && (
-        <pointLight
-          // shadow 관련 prop 이 변경되면 강제 remount — three.js 가 shadow map 텍스처를
-          // light 생성 시점에 한 번 할당하므로 castShadow / radius / mapSize 변경 즉시 반영용
-          key={`pt-${l.castShadow ? 1 : 0}-${l.shadowRadius ?? 4}-${mapSize}`}
-          position={l.position}
-          color={l.color}
-          intensity={l.intensity}
-          distance={l.distance ?? 10}
-          decay={l.decay ?? 2}
-          castShadow={l.castShadow ?? false}
-          // 디폴트 mapSize=512 / camera-far=500 은 acne + 정밀도 부족으로 가장자리 계단 유발.
-          // 전역 shadowQuality 따라 1024~8192. blurSamples 도 cap 25 → 50 으로 늘려
-          // 큰 radius 에서 PCF band 패턴(거친 줄무늬) 감소.
-          shadow-mapSize={[mapSize, mapSize]}
-          shadow-radius={l.shadowRadius ?? 4}
-          shadow-blurSamples={Math.max(8, Math.min(50, Math.round((l.shadowRadius ?? 4) * 4)))}
-          shadow-bias={-0.0005}
-          shadow-normalBias={0.02}
-          shadow-camera-near={0.1}
-          shadow-camera-far={Math.max(l.distance ?? 10, 0.5)}
-        />
+        <PointLightInstance light={l} selected={selected} mapSize={mapSize} />
       )}
-      {l.kind === 'spot' && <SpotWithTarget light={l} mapSize={mapSize} />}
+      {l.kind === 'spot' && <SpotWithTarget light={l} selected={selected} mapSize={mapSize} />}
       {l.kind === 'rect' && (
         <rectAreaLight
           position={l.position}
@@ -129,20 +118,96 @@ function CustomLightInstance({ light: l, selected }: { light: CustomLight; selec
   );
 }
 
+/** PointLight + 선택 시 PointLightHelper 자동 시각화 + shadow.autoUpdate 옵션. */
+function PointLightInstance({
+  light: l,
+  selected,
+  mapSize,
+}: {
+  light: CustomLight;
+  selected: boolean;
+  mapSize: number;
+}) {
+  const ref = useRef<PointLight>(null);
+  const { scene } = useThree();
+  // 선택 시 PointLightHelper 추가
+  useEffect(() => {
+    if (!selected || !ref.current) return;
+    const helper = new PointLightHelper(ref.current, 0.2, '#22d3ee');
+    scene.add(helper);
+    return () => {
+      scene.remove(helper);
+      helper.dispose();
+    };
+  }, [selected, scene]);
+  // shadow.autoUpdate 라이브 적용 — false 면 light 변경되어도 shadow 캐싱 유지
+  useEffect(() => {
+    if (ref.current) ref.current.shadow.autoUpdate = l.shadowAutoUpdate ?? true;
+  }, [l.shadowAutoUpdate]);
+  return (
+    <pointLight
+      ref={ref}
+      key={`pt-${l.castShadow ? 1 : 0}-${l.shadowRadius ?? 4}-${mapSize}`}
+      position={l.position}
+      color={l.color}
+      intensity={l.intensity}
+      distance={l.distance ?? 10}
+      decay={l.decay ?? 2}
+      castShadow={l.castShadow ?? false}
+      shadow-mapSize={[mapSize, mapSize]}
+      shadow-radius={l.shadowRadius ?? 4}
+      shadow-blurSamples={Math.max(8, Math.min(50, Math.round((l.shadowRadius ?? 4) * 4)))}
+      shadow-bias={-0.0005}
+      shadow-normalBias={0.02}
+      shadow-camera-near={0.1}
+      shadow-camera-far={Math.max(l.distance ?? 10, 0.5)}
+    />
+  );
+}
+
 /** SpotLight + 명시적 target Object3D — store의 target 좌표를 따라간다. */
-function SpotWithTarget({ light: l, mapSize }: { light: CustomLight; mapSize: number }) {
+function SpotWithTarget({
+  light: l,
+  selected,
+  mapSize,
+}: {
+  light: CustomLight;
+  selected: boolean;
+  mapSize: number;
+}) {
   const targetRef = useRef<Object3D>(new Object3D());
   const target = targetRef.current;
+  const lightRef = useRef<SpotLight>(null);
+  const { scene } = useThree();
 
   useEffect(() => {
     target.position.set(l.target?.[0] ?? 0, l.target?.[1] ?? 0, l.target?.[2] ?? 0);
     target.updateMatrixWorld();
   }, [l.target, target]);
 
+  // 선택 시 cone helper 시각화
+  useEffect(() => {
+    if (!selected || !lightRef.current) return;
+    const helper = new SpotLightHelper(lightRef.current, '#22d3ee');
+    scene.add(helper);
+    const id = setInterval(() => helper.update(), 100);
+    return () => {
+      clearInterval(id);
+      scene.remove(helper);
+      helper.dispose();
+    };
+  }, [selected, scene]);
+
+  // shadow.autoUpdate 라이브 적용
+  useEffect(() => {
+    if (lightRef.current) lightRef.current.shadow.autoUpdate = l.shadowAutoUpdate ?? true;
+  }, [l.shadowAutoUpdate]);
+
   return (
     <>
       <primitive object={target} />
       <spotLight
+        ref={lightRef}
         key={`sp-${l.castShadow ? 1 : 0}-${(l.angle ?? 0).toFixed(2)}-${l.shadowRadius ?? 4}-${mapSize}`}
         position={l.position}
         color={l.color}

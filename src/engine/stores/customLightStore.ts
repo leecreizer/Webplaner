@@ -44,6 +44,9 @@ export interface CustomLight {
   castShadow?: boolean;
   /** 그림자 가장자리 부드러움 (PCFShadowMap `shadow.radius`). 큰 값 = 더 부드러움. 0=hard. */
   shadowRadius?: number;
+  /** 매 frame shadow map 재계산 여부. 정적 라이트는 false 로 두면 성능 ↑.
+   *  false 면 light 가 변경되어도 shadow 가 update 안 됨 — 필요 시 setMaterial 등으로 trigger. */
+  shadowAutoUpdate?: boolean;
 }
 
 export interface CustomLightState {
@@ -73,6 +76,7 @@ function defaultsFor(kind: LightKind): Omit<CustomLight, 'id' | 'name'> {
         decay: 2,
         castShadow: true,
         shadowRadius: 4,
+        shadowAutoUpdate: true,
       };
     case 'spot':
       return {
@@ -87,6 +91,7 @@ function defaultsFor(kind: LightKind): Omit<CustomLight, 'id' | 'name'> {
         target: [0, 0, 0],
         castShadow: true,
         shadowRadius: 4,
+        shadowAutoUpdate: true,
       };
     case 'rect':
       return {
