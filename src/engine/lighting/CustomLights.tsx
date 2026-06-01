@@ -144,6 +144,12 @@ function PointLightInstance({
   useEffect(() => {
     if (ref.current) ref.current.shadow.autoUpdate = l.shadowAutoUpdate ?? true;
   }, [l.shadowAutoUpdate]);
+  // light.radius — gkjohnson path tracer 가 point/spot 의 소프트 그림자에 직접 사용.
+  // raster shadow-radius 와 별개로 *PT* 그림자 부드러움을 결정. shadowRadius 슬라이더 공유.
+  useEffect(() => {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    if (ref.current) (ref.current as any).radius = (l.shadowRadius ?? 4) * 0.05;
+  }, [l.shadowRadius]);
   return (
     <pointLight
       ref={ref}
@@ -202,6 +208,11 @@ function SpotWithTarget({
   useEffect(() => {
     if (lightRef.current) lightRef.current.shadow.autoUpdate = l.shadowAutoUpdate ?? true;
   }, [l.shadowAutoUpdate]);
+  // light.radius — PT 소프트 그림자 (raster shadow-radius 와 별개)
+  useEffect(() => {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    if (lightRef.current) (lightRef.current as any).radius = (l.shadowRadius ?? 4) * 0.05;
+  }, [l.shadowRadius]);
 
   return (
     <>

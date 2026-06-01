@@ -1,3 +1,4 @@
+import { useEffect, useRef } from 'react';
 import { Canvas, useThree } from '@react-three/fiber';
 import {
   OrbitControls,
@@ -6,7 +7,7 @@ import {
   PerspectiveCamera,
   OrthographicCamera,
 } from '@react-three/drei';
-import { PCFShadowMap, ACESFilmicToneMapping, MOUSE } from 'three';
+import { PCFShadowMap, ACESFilmicToneMapping, MOUSE, type PointLight } from 'three';
 import { PlanScene } from '@/features/scene/PlanScene';
 import { WallDrawingTool } from '@/features/drawing/WallDrawingTool';
 import {
@@ -178,6 +179,7 @@ function SceneLights() {
   const hemiFactor = Math.max(0, 1 - shadowStrength * 0.95);
   const effectiveAmbient = ambientIntensity * ambientFactor;
   const hemiActive = giMode === 'hemisphere' && hemiVisible;
+  const ptEnabled = useLightingStore((s) => s.pathtracerEnabled);
 
   return (
     <>
@@ -187,27 +189,79 @@ function SceneLights() {
         groundColor={giGroundColor}
         intensity={hemiActive ? giIntensity * hemiFactor : 0}
       />
-      <directionalLight
-        // mapSize/cast/softness/frustum 중 하나라도 바뀌면 강제 remount — shadow map + radius
-        // + camera frustum 모두 light 생성 시점에만 적용되므로 즉시 반영 위해 key 사용.
-        key={`dir-${mapSize}-${castShadow ? 1 : 0}-${shadowSoftness}-${shadowFrustumSize}`}
-        position={position}
-        intensity={sunVisible ? intensity : 0}
-        castShadow={sunVisible && castShadow}
-        shadow-mapSize={[mapSize, mapSize]}
-        shadow-radius={shadowSoftness}
-        // blurSamples 많을수록 부드러운 penumbra(줄무늬 없이). cap 25→32, 계수 ×2→×3.
-        shadow-blurSamples={Math.max(8, Math.min(32, Math.round(shadowSoftness * 3)))}
-        shadow-bias={shadowBias}
-        shadow-normalBias={shadowNormalBias}
-        shadow-camera-left={-shadowFrustumSize}
-        shadow-camera-right={shadowFrustumSize}
-        shadow-camera-top={shadowFrustumSize}
-        shadow-camera-bottom={-shadowFrustumSize}
-        shadow-camera-near={0.5}
-        shadow-camera-far={100}
-      />
+      {/* 태양 — raster 모드: DirectionalLight(shadow map). path tracer: DirectionalLight 는
+          softness 슬롯이 없어 무조건 하드하므로, 대신 거리 먼 PointLight 프록시(decay 0 +
+          radius)로 평행광 근사 + 소프트 그림자. 두 광원이 동시에 path-trace 되면 그림자가
+          겹치므로 모드별로 *하나만* 렌더. */}
+      {!ptEnabled && (
+        <directionalLight
+          key={`dir-${mapSize}-${castShadow ? 1 : 0}-${shadowSoftness}-${shadowFrustumSize}`}
+          position={position}
+          intensity={sunVisible ? intensity : 0}
+          castShadow={sunVisible && castShadow}
+          shadow-mapSize={[mapSize, mapSize]}
+          shadow-radius={shadowSoftness}
+          shadow-blurSamples={Math.max(8, Math.min(32, Math.round(shadowSoftness * 3)))}
+          shadow-bias={shadowBias}
+          shadow-normalBias={shadowNormalBias}
+          shadow-camera-left={-shadowFrustumSize}
+          shadow-camera-right={shadowFrustumSize}
+          shadow-camera-top={shadowFrustumSize}
+          shadow-camera-bottom={-shadowFrustumSize}
+          shadow-camera-near={0.5}
+          shadow-camera-far={100}
+        />
+      )}
+      {ptEnabled && sunVisible && (
+        <SunPathtracerProxy
+          position={position}
+          intensity={intensity}
+          softness={shadowSoftness}
+        />
+      )}
     </>
+  );
+}
+
+/**
+ * Path tracer 전용 태양 프록시 — DirectionalLight 가 PT 에서 softness 불가하므로 거리 먼
+ * PointLight 로 대체. decay=0 + distance=0 → 거리 감쇠 없이 평행광처럼 균일 조명. radius 가
+ * gkjohnson path tracer 의 penumbra 를 결정 → 소프트니스 슬라이더로 제어.
+ */
+function SunPathtracerProxy({
+  position,
+  intensity,
+  softness,
+}: {
+  position: [number, number, number];
+  intensity: number;
+  softness: number;
+}) {
+  const ref = useRef<PointLight>(null);
+  // sun 방향으로 멀리 배치 (50m) — 평행광 근사
+  const dist = 50;
+  const len = Math.hypot(position[0], position[1], position[2]) || 1;
+  const far: [number, number, number] = [
+    (position[0] / len) * dist,
+    (position[1] / len) * dist,
+    (position[2] / len) * dist,
+  ];
+  useEffect(() => {
+    if (!ref.current) return;
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const l = ref.current as any;
+    l.radius = softness * 0.06; // 50m 거리에서 penumbra 각 ≈ softness*0.07°
+    l.decay = 0;
+    l.distance = 0;
+  }, [softness]);
+  return (
+    <pointLight
+      ref={ref}
+      position={far}
+      // decay=0 PointLight 는 거리 감쇠 없어 directional 과 거의 같은 단위 — ×1
+      intensity={intensity}
+      castShadow
+    />
   );
 }
 
