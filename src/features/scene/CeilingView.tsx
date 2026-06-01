@@ -1,6 +1,7 @@
 import { useMemo } from 'react';
 import { DoubleSide, Vector2, Vector3 } from 'three';
 import { useMeshSelectionStore, meshKey } from '@/features/selection/meshSelectionStore';
+import { useVisibilityStore } from '@/features/scene/visibilityStore';
 import { Brush, Evaluator, SUBTRACTION, ADDITION } from 'three-bvh-csg';
 import { Space } from '@/domain/structures/Space';
 import { polyGeometry, polyGeometryExtruded } from '@/engine/mesh/MeshGenerator';
@@ -34,6 +35,7 @@ export function CeilingView({
   );
 
   const myKey = meshKey('ceiling', space.spaceIndex);
+  const visible = useVisibilityStore((s) => !s.hidden[myKey]);
   const selected = useMeshSelectionStore((s) => s.selectedMeshKey === myKey);
   const override = useMeshSelectionStore((s) => s.materials[myKey]);
   const selectMesh = useMeshSelectionStore((s) => s.selectMesh);
@@ -73,31 +75,39 @@ export function CeilingView({
     }
   }, [space.cornerPoints, thickness, ceilingOps]);
 
-  if (geometry === null) return null;
+  if (geometry === null || !visible) return null;
 
   return (
-    <mesh
-      geometry={geometry}
-      castShadow
-      receiveShadow
-      userData={{ editKind: 'ceiling', editOwnerId: space.spaceIndex }}
-      onPointerDown={(e) => {
-        if (e.button !== 0) return;
-        e.stopPropagation();
-        selectMesh(selected ? null : myKey);
-      }}
-    >
-      <meshStandardMaterial
-        color={effectiveColor}
-        roughness={effectiveRoughness}
-        metalness={effectiveMetalness}
-        opacity={effectiveOpacity}
-        transparent={effectiveOpacity < 1}
-        emissive={override?.emissive ?? '#000000'}
-        emissiveIntensity={override?.emissiveIntensity ?? 0}
-        side={DoubleSide}
-        shadowSide={DoubleSide}
-      />
-    </mesh>
+    <group>
+      <mesh
+        geometry={geometry}
+        castShadow
+        receiveShadow
+        userData={{ editKind: 'ceiling', editOwnerId: space.spaceIndex }}
+        onPointerDown={(e) => {
+          if (e.button !== 0) return;
+          e.stopPropagation();
+          selectMesh(selected ? null : myKey);
+        }}
+      >
+        <meshStandardMaterial
+          color={effectiveColor}
+          roughness={effectiveRoughness}
+          metalness={effectiveMetalness}
+          opacity={effectiveOpacity}
+          transparent={effectiveOpacity < 1}
+          emissive={override?.emissive ?? '#000000'}
+          emissiveIntensity={override?.emissiveIntensity ?? 0}
+          side={DoubleSide}
+          shadowSide={DoubleSide}
+        />
+      </mesh>
+      {selected && (
+        <lineSegments renderOrder={999}>
+          <edgesGeometry args={[geometry, 1]} />
+          <lineBasicMaterial color="#22d3ee" depthTest={false} transparent opacity={0.95} />
+        </lineSegments>
+      )}
+    </group>
   );
 }

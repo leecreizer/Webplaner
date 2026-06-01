@@ -16,6 +16,7 @@ import { buildSpaces } from '@/domain/layout/SpaceBuilder';
 import { alignSnap, type DragGuide } from '@/features/drawing/snapHelpers';
 import { DragGuideLines } from '@/features/drawing/DragGuideLines';
 import { useMeshSelectionStore, meshKey } from '@/features/selection/meshSelectionStore';
+import { useVisibilityStore } from '@/features/scene/visibilityStore';
 
 const _csgEval = new Evaluator();
 
@@ -149,8 +150,10 @@ export function WallView({ wall, color = '#cccccc' }: { wall: Wall; color?: stri
   const myMeshKey = meshKey('wall', wall.wallIndex);
   const meshOverride = useMeshSelectionStore((s) => s.materials[myMeshKey]);
   const selectMesh = useMeshSelectionStore((s) => s.selectMesh);
+  const meshSelected = useMeshSelectionStore((s) => s.selectedMeshKey === myMeshKey);
+  const visible = useVisibilityStore((s) => !s.hidden[myMeshKey]);
 
-  if (geometry === null) return null;
+  if (geometry === null || !visible) return null;
 
   const wallColor = dragging
     ? '#ff5722'
@@ -288,10 +291,20 @@ export function WallView({ wall, color = '#cccccc' }: { wall: Wall; color?: stri
             transparent={(meshOverride?.opacity ?? 1) < 1}
             emissive={meshOverride?.emissive ?? '#000000'}
             emissiveIntensity={meshOverride?.emissiveIntensity ?? 0}
+            // 벽은 두께 있는 박스 — FrontSide 만 shadow casting 해야 self-shadow acne 없음.
+            // (shadowSide=DoubleSide 면 wall 자기 backface 가 자기 frontface 에 그림자
+            // 떨어뜨려 벽이 자기 자신에 어둠 acne 가 끼고 *외부에 정상 그림자가 약하게*
+            // 나타남.)
             side={DoubleSide}
-            shadowSide={DoubleSide}
           />
         </mesh>
+        {/* 선택 시 시안색 가장자리 라인 — 시각 piacking 표시 */}
+        {(isSelected || meshSelected) && (
+          <lineSegments renderOrder={999}>
+            <edgesGeometry args={[geometry, 1]} />
+            <lineBasicMaterial color="#22d3ee" depthTest={false} transparent opacity={0.95} />
+          </lineSegments>
+        )}
       </group>
 
       {/* 가이드 라인 + 삭제 버튼은 회전 group *밖*에 두어 좌표 변환 영향 안 받게 */}

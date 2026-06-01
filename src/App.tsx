@@ -29,6 +29,7 @@ import { Toolbar } from './ui/Toolbar';
 import { LightingPanel } from './ui/LightingPanel';
 import { LightInspector } from './ui/LightInspector';
 import { MeshInspector } from './ui/MeshInspector';
+import { SceneOutliner } from './ui/SceneOutliner';
 import { HostProvider } from './host/HostContext';
 import type { HostEventHandlers } from './host/HostEvents';
 
@@ -67,6 +68,7 @@ export default function App({
         {showLightingPanel && <LightingPanel />}
         {showLightingPanel && <LightInspector />}
         {showLightingPanel && <MeshInspector />}
+        {showLightingPanel && <SceneOutliner />}
         <Canvas
           shadows={{ type: PCFShadowMap }}
           gl={{
