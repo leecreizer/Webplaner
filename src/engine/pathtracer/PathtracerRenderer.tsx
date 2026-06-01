@@ -125,16 +125,28 @@ export function PathtracerRenderer() {
     };
   }, [enabled, scene, camera, wallsLen, spacesLen]);
 
-  // priority=2 — `@react-three/postprocessing` 의 EffectComposer 도 priority=1 로 동작하므로
-  // path tracer 가 그 *다음* 호출되어 캔버스를 덮어쓰도록 한다. (PostFXGate 가 이미 비활성화
-  // 하지만 이중 안전).
+  // 카메라 이동 감지용 — 직전 frame 의 matrixWorld 해시
+  const prevCamKey = useRef<string>('');
+
+  // priority=2 — EffectComposer(priority=1) *다음* 호출되어 캔버스를 덮어쓰도록.
   useFrame(() => {
     const pt = ptRef.current;
     if (!enabled || !pt) return;
     try {
-      pt.renderSample();
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const s = (pt as any).samples ?? 0;
+      const ptAny = pt as any;
+      // ── 핵심: 카메라가 움직이면 updateCamera() 호출 ──
+      // WebGLPathTracer 는 renderSample() 만으로는 카메라 변경을 감지하지 못한다.
+      // updateCamera() 가 (1) 누적 sample reset, (2) dynamicLowRes 의 "움직이는 중" 타이머를
+      // 트리거한다. 이게 없으면 회전해도 처음 수렴한 frame 에 *멈춰* 있고 저해상도 모드도 안 켜짐.
+      camera.updateMatrixWorld();
+      const key = camera.matrixWorld.elements.join(',');
+      if (key !== prevCamKey.current) {
+        prevCamKey.current = key;
+        if (typeof ptAny.updateCamera === 'function') ptAny.updateCamera();
+      }
+      pt.renderSample();
+      const s = ptAny.samples ?? 0;
       if (Math.floor(s) % 10 === 0 && Math.floor(s) !== Math.floor(samples)) {
         setSamples(s);
         if (Math.floor(s) > 0 && Math.floor(s) % 30 === 0) {
