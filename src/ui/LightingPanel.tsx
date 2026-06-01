@@ -134,6 +134,24 @@ export function LightingPanel() {
                 onChange={s.setPathtracerBounces}
               />
             )}
+            <button
+              onClick={s.applyPathtracerCinematicPreset}
+              style={{
+                marginTop: 8,
+                padding: '6px 10px',
+                background: '#4ade80',
+                color: '#0a0a0a',
+                border: 'none',
+                borderRadius: 4,
+                fontSize: 12,
+                fontWeight: 600,
+                cursor: 'pointer',
+                width: '100%',
+              }}
+              title="bounces=8, HDR env=1.5, ambient/GI=0, sky 배경 ON — 사실적 GI 한 번에"
+            >
+              🎬 Path Tracer 시네마틱 프리셋 적용
+            </button>
           </Section>
 
           <Section title="Environment (HDR/IBL)">

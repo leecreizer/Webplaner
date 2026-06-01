@@ -137,6 +137,9 @@ export interface LightingState {
   setLightProbeIntensity: (v: number) => void;
   setPathtracerEnabled: (v: boolean) => void;
   setPathtracerBounces: (v: number) => void;
+  /** Path tracer 활성 + 시네마틱 프리셋 적용 — bounces↑, HDR env↑↑, 라스터 ambient/GI 0
+   *  (path tracer 가 진짜 GI 를 자체 계산하므로 fake ambient 가 결과를 평탄화함). */
+  applyPathtracerCinematicPreset: () => void;
   setEnvironmentPreset: (v: EnvironmentPreset) => void;
   setEnvironmentBackground: (v: boolean) => void;
   setEnvironmentIntensity: (v: number) => void;
@@ -268,6 +271,22 @@ export const useLightingStore = create<LightingState>((set) => ({
   setLightProbeIntensity: (v) => set({ lightProbeIntensity: v }),
   setPathtracerEnabled: (v) => set({ pathtracerEnabled: v }),
   setPathtracerBounces: (v) => set({ pathtracerBounces: v }),
+  applyPathtracerCinematicPreset: () =>
+    set({
+      pathtracerEnabled: true,
+      pathtracerBounces: 8,
+      // HDR env 가 path tracer 의 1차 광원 (창문 빛 시뮬). background 도 켜서 sky 가
+      // 폐쇄 공간 외부에서 들어오게.
+      environmentIntensity: 1.5,
+      environmentBackground: true,
+      // path tracer 가 진짜 GI 를 계산하므로 fake 광원은 모두 0 — 안 그러면 결과가
+      // 평탄해져 어둠/대비가 사라진다.
+      ambientIntensity: 0,
+      giIntensity: 0,
+      shadowStrength: 1.0,
+      // raster 그림자는 path tracer 에서 의미 없음 — 비활성
+      castShadow: false,
+    }),
   setEnvironmentPreset: (v) => set({ environmentPreset: v }),
   setEnvironmentBackground: (v) => set({ environmentBackground: v }),
   setEnvironmentIntensity: (v) => set({ environmentIntensity: v }),
