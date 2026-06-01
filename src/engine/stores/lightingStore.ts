@@ -270,10 +270,11 @@ const DEFAULTS = {
 
   // GTAO default off — 사용자가 명시적으로 토글. N8AO와 별개로 동작.
   gtaoEnabled: false,
+  // 인테리어 스케일 m 단위 자연 매핑 (panel slider 와 1:1)
   gtaoIntensity: 1.0,
-  gtaoRadius: 0.5,
-  gtaoDistanceFalloff: 1.0,
-  gtaoThickness: 1.0,
+  gtaoRadius: 0.8,          // 80cm AO 반경
+  gtaoDistanceFalloff: 10,  // 카메라 10m 너머 fade
+  gtaoThickness: 1.0,       // 1m gap threshold
   gtaoScale: 1.0,
 
   vignetteEnabled: true,

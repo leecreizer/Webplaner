@@ -196,11 +196,10 @@ export function LightingPanel() {
             <Checkbox label="AO — GTAO (Ground Truth, three.js native)" checked={s.gtaoEnabled} onChange={s.setGtaoEnabled} />
             {s.gtaoEnabled && (
               <>
-                <Slider label="GTAO 강도" min={0} max={2} step={0.05} value={s.gtaoIntensity} onChange={s.setGtaoIntensity} />
-                <Slider label="GTAO 반경" min={0.05} max={3} step={0.05} value={s.gtaoRadius} onChange={s.setGtaoRadius} />
-                <Slider label="GTAO 거리 페이드" min={0.05} max={2} step={0.05} value={s.gtaoDistanceFalloff} onChange={s.setGtaoDistanceFalloff} />
-                <Slider label="GTAO 두께" min={0.1} max={3} step={0.05} value={s.gtaoThickness} onChange={s.setGtaoThickness} />
-                <Slider label="GTAO scale" min={0.1} max={3} step={0.05} value={s.gtaoScale} onChange={s.setGtaoScale} />
+                <Slider label="강도" min={0} max={3} step={0.05} value={s.gtaoIntensity} onChange={s.setGtaoIntensity} />
+                <Slider label="반경 (m)" min={0.3} max={3} step={0.05} value={s.gtaoRadius} onChange={s.setGtaoRadius} />
+                <Slider label="거리 페이드 (m)" min={1} max={20} step={0.5} value={s.gtaoDistanceFalloff} onChange={s.setGtaoDistanceFalloff} />
+                <Slider label="두께 (m)" min={0.3} max={5} step={0.1} value={s.gtaoThickness} onChange={s.setGtaoThickness} />
               </>
             )}
 
