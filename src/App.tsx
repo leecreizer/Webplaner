@@ -168,7 +168,11 @@ function SceneLights() {
   const hemiVisible = useLightingStore((s) => s.hemiVisible);
   const position = sphericalToCartesian(azimuth, elevation, distance);
   const mapSize = shadowMapSizeFor(shadowQuality);
-  const effectiveAmbient = ambientIntensity * (1 - shadowStrength * 0.7);
+  // shadowStrength = 그림자 진하기. *간접광 전체*를 감쇠해 어두운 영역이 더 어두워지게.
+  // ambient 는 가장 크게 줄이고, hemi 도 비슷, env (HDR) 는 sky 가시성 유지를 위해 약하게.
+  const ambientFactor = 1 - shadowStrength * 0.85;
+  const hemiFactor = 1 - shadowStrength * 0.75;
+  const effectiveAmbient = ambientIntensity * ambientFactor;
   const hemiActive = giMode === 'hemisphere' && hemiVisible;
 
   return (
@@ -177,7 +181,7 @@ function SceneLights() {
       <hemisphereLight
         color={giSkyColor}
         groundColor={giGroundColor}
-        intensity={hemiActive ? giIntensity : 0}
+        intensity={hemiActive ? giIntensity * hemiFactor : 0}
       />
       <directionalLight
         // mapSize/cast/softness 중 하나라도 바뀌면 강제 remount — shadow map + radius 즉시 반영.
@@ -206,7 +210,13 @@ function SceneEnvironment() {
   const preset = useLightingStore((s) => s.environmentPreset);
   const background = useLightingStore((s) => s.environmentBackground);
   const intensity = useLightingStore((s) => s.environmentIntensity);
-  return <Environment preset={preset} background={background} environmentIntensity={intensity} />;
+  const shadowStrength = useLightingStore((s) => s.shadowStrength);
+  // shadowStrength 가 env IBL 도 살짝 감쇠 — env 가 indirect 의 큰 부분을 차지하므로
+  // 적용 안 하면 shadowStrength 슬라이더 변화가 거의 안 보임. sky 가시성 유지 위해 약하게.
+  const envFactor = 1 - shadowStrength * 0.5;
+  return (
+    <Environment preset={preset} background={background} environmentIntensity={intensity * envFactor} />
+  );
 }
 
 /** 그리드 — store의 컬러/투명도/표시 여부 바인딩.
