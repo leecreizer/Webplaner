@@ -40,7 +40,25 @@ function SunInspector() {
   const s = useLightingStore();
   return (
     <>
+      <Section title="하늘 / 시간 변화">
+        <CheckboxField label="동적 하늘 (Sky) + 시간" checked={s.skyEnabled} onChange={s.setSkyEnabled} />
+        {s.skyEnabled && (
+          <NumberField
+            label={`시간 (${formatTime(s.timeOfDay)})`}
+            value={s.timeOfDay}
+            min={0}
+            max={24}
+            step={0.25}
+            onChange={s.setTimeOfDay}
+          />
+        )}
+      </Section>
       <Section title="태양 방향 / 강도">
+        {s.skyEnabled && (
+          <div style={{ fontSize: 10, opacity: 0.55, marginBottom: 4 }}>
+            ※ 동적 하늘 활성 — 방위/고도/강도는 시간 슬라이더가 자동 제어
+          </div>
+        )}
         <NumberField label="방위각 (azimuth°)" value={s.azimuth} min={0} max={360} step={1} onChange={s.setAzimuth} />
         <NumberField label="고도 (elevation°)" value={s.elevation} min={0} max={90} step={1} onChange={s.setElevation} />
         <NumberField label="거리 (m)" value={s.distance} min={1} max={50} step={0.5} onChange={s.setDistance} />
@@ -107,6 +125,13 @@ function HemiInspector() {
       <ColorField label="Ground 색 (아래)" value={s.giGroundColor} onChange={s.setGiGroundColor} />
     </Section>
   );
+}
+
+/** 0~24 시간 값을 "HH:MM" 으로 표시. */
+function formatTime(t: number): string {
+  const h = Math.floor(t) % 24;
+  const m = Math.round((t - Math.floor(t)) * 60);
+  return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`;
 }
 
 function Section({ title, children }: { title: string; children: React.ReactNode }) {

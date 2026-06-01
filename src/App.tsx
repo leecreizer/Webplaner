@@ -23,6 +23,7 @@ import { SpaceLightmap } from '@/engine/lighting/SpaceLightmap';
 import { SceneLightProbe } from '@/engine/lighting/SceneLightProbe';
 import { IrradianceProbeGrid } from '@/engine/lighting/IrradianceProbeGrid';
 import { ImportedModels } from '@/features/models/ImportedModels';
+import { DynamicSky } from '@/engine/lighting/DynamicSky';
 import { PathtracerRenderer } from '@/engine/pathtracer/PathtracerRenderer';
 import { CustomLights } from '@/engine/lighting/CustomLights';
 import { EditTool } from '@/features/editing/EditTool';
@@ -86,6 +87,7 @@ export default function App({
           }}
         >
           <SceneBackground />
+          <DynamicSky />
           <SceneCamera />
           <SceneLights />
           <SceneEnvironment />
@@ -120,8 +122,10 @@ export default function App({
 /** 환경맵을 배경으로 안 쓸 때만 단색 배경 적용. */
 function SceneBackground() {
   const envBackground = useLightingStore((s) => s.environmentBackground);
+  const skyEnabled = useLightingStore((s) => s.skyEnabled);
   const bgColor = useViewStore((s) => s.sceneBackgroundColor);
-  if (envBackground) return null;
+  // 동적 하늘(Sky) 또는 HDR 배경이 켜져 있으면 단색 배경을 깔지 않음 (덮어쓰면 안 됨).
+  if (envBackground || skyEnabled) return null;
   return <color attach="background" args={[bgColor]} />;
 }
 

@@ -202,6 +202,13 @@ export interface LightingState {
   selectedBuiltin: BuiltinLightKind | null;
   setSelectedBuiltin: (v: BuiltinLightKind | null) => void;
 
+  /** 동적 하늘(drei Sky) + 시간 변화 활성. 켜면 timeOfDay 가 태양 방향/강도/색을 구동. */
+  skyEnabled: boolean;
+  setSkyEnabled: (v: boolean) => void;
+  /** 하루 시간 0~24 (h). 6=일출, 12=정오, 18=일몰, 0/24=자정. 태양 고도/방위/색온도 결정. */
+  timeOfDay: number;
+  setTimeOfDay: (v: number) => void;
+
   /** 기본 광원 visibility — 끄면 intensity 0. */
   sunVisible: boolean;
   ambientVisible: boolean;
@@ -292,6 +299,9 @@ const DEFAULTS = {
   sunVisible: true,
   ambientVisible: true,
   hemiVisible: true,
+
+  skyEnabled: false,
+  timeOfDay: 12,
 };
 
 /** dev 모드 진단용으로 store를 window에 노출. */
@@ -370,6 +380,8 @@ export const useLightingStore = create<LightingState>((set) => ({
   setLightGizmoMode: (v) => set({ lightGizmoMode: v }),
 
   setSelectedBuiltin: (v) => set({ selectedBuiltin: v }),
+  setSkyEnabled: (v) => set({ skyEnabled: v }),
+  setTimeOfDay: (v) => set({ timeOfDay: v }),
   setBuiltinVisible: (kind, v) =>
     set(
       kind === 'sun'
