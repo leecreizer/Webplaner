@@ -95,9 +95,15 @@ export function LightingPanel() {
               value={s.giMode}
               options={GI_MODES as unknown as string[]}
               onChange={(v) => {
-                s.setGiMode(v as typeof GI_MODES[number]);
-                // path-tracer 모드 선택 시 자동 활성, 다른 모드 시 비활성
-                s.setPathtracerEnabled(v === 'path-tracer');
+                const mode = v as typeof GI_MODES[number];
+                // path-tracer 선택 시 시네마틱 프리셋 전체 적용 (env/bounces/조명 최적 셋업) —
+                // 체크박스·select·버튼 어느 입구로 켜도 동일한 화질 보장. 다른 모드면 PT off.
+                if (mode === 'path-tracer') {
+                  s.applyPathtracerCinematicPreset();
+                } else {
+                  s.setGiMode(mode);
+                  s.setPathtracerEnabled(false);
+                }
               }}
             />
             <Slider label="GI 강도" min={0} max={2} step={0.05} value={s.giIntensity} onChange={s.setGiIntensity} />
@@ -131,8 +137,13 @@ export function LightingPanel() {
               label="GPU Path Tracer (Unity/Unreal 수준 GI — 무거움)"
               checked={s.pathtracerEnabled}
               onChange={(v) => {
-                s.setPathtracerEnabled(v);
-                if (v && s.lightmapEnabled) s.setLightmapEnabled(false);
+                if (v) {
+                  // 켤 때 시네마틱 프리셋 적용 — 버튼과 동일 화질
+                  s.applyPathtracerCinematicPreset();
+                  s.setLightmapEnabled(false);
+                } else {
+                  s.setPathtracerEnabled(false);
+                }
               }}
             />
             {s.pathtracerEnabled && (

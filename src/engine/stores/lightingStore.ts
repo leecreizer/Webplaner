@@ -327,6 +327,8 @@ export const useLightingStore = create<LightingState>((set) => ({
     set({
       giMode: 'path-tracer',
       pathtracerEnabled: true,
+      // 라이트맵/LightProbe 와 동시 활성 시 시각 충돌 → 끔
+      lightmapEnabled: false,
       // 인테리어는 5 bounce 면 충분 — 8 대비 빠른 수렴 + 노이즈 적음 (bounce 많을수록 분산 ↑).
       pathtracerBounces: 5,
       // HDR env 가 path tracer 의 1차 광원 (창문 빛 시뮬). background 도 켜서 sky 가
