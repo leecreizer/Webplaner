@@ -261,11 +261,12 @@ const DEFAULTS = {
   bloomEnabled: true,
   bloomIntensity: 0.35,
 
-  // N8AO — 폐쇄 공간 모서리/구석을 어둡게. 간접광 차폐 효과를 시뮬해 실내 깊은 공간 어둠을 강화.
-  ssaoEnabled: true,
-  ssaoIntensity: 5.0,
-  aoRadius: 1.2,
-  aoDistanceFalloff: 0.5,
+  // N8AO — 모서리/구석 darken. 디폴트 OFF — 강한 intensity 가 화면 검정 plate 처럼 보일 수
+  // 있어 사용자가 명시적으로 켜는 게 안전. ssao panel 에서 토글 + 강도 조절.
+  ssaoEnabled: false,
+  ssaoIntensity: 1.5,
+  aoRadius: 0.8,
+  aoDistanceFalloff: 0.3,
 
   // GTAO default off — 사용자가 명시적으로 토글. N8AO와 별개로 동작.
   gtaoEnabled: false,
