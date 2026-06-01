@@ -28,6 +28,7 @@ import { EditOverlay } from '@/features/editing/EditOverlay';
 import { Toolbar } from './ui/Toolbar';
 import { LightingPanel } from './ui/LightingPanel';
 import { LightInspector } from './ui/LightInspector';
+import { MeshInspector } from './ui/MeshInspector';
 import { HostProvider } from './host/HostContext';
 import type { HostEventHandlers } from './host/HostEvents';
 
@@ -65,6 +66,7 @@ export default function App({
         {showToolbar && <Toolbar />}
         {showLightingPanel && <LightingPanel />}
         {showLightingPanel && <LightInspector />}
+        {showLightingPanel && <MeshInspector />}
         <Canvas
           shadows={{ type: PCFShadowMap }}
           gl={{

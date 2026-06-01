@@ -1,5 +1,6 @@
 import { useMemo } from 'react';
 import { DoubleSide, Vector2, Vector3 } from 'three';
+import { useMeshSelectionStore, meshKey } from '@/features/selection/meshSelectionStore';
 import { Brush, Evaluator, SUBTRACTION, ADDITION } from 'three-bvh-csg';
 import { Space } from '@/domain/structures/Space';
 import { polyGeometry, polyGeometryExtruded } from '@/engine/mesh/MeshGenerator';
@@ -32,6 +33,16 @@ export function FloorView({
     () => allEditOps.filter((o) => o.targetKind === 'floor' && o.ownerId === space.spaceIndex),
     [allEditOps, space.spaceIndex],
   );
+
+  // mesh 선택 + 사용자 material override
+  const myKey = meshKey('floor', space.spaceIndex);
+  const selected = useMeshSelectionStore((s) => s.selectedMeshKey === myKey);
+  const override = useMeshSelectionStore((s) => s.materials[myKey]);
+  const selectMesh = useMeshSelectionStore((s) => s.selectMesh);
+  const effectiveColor = override?.color ?? color;
+  const effectiveRoughness = override?.roughness ?? 0.95;
+  const effectiveMetalness = override?.metalness ?? 0.0;
+  const effectiveOpacity = override?.opacity ?? 1.0;
 
   const geometry = useMemo(() => {
     const pts = space.cornerPoints;
@@ -71,11 +82,20 @@ export function FloorView({
       castShadow
       receiveShadow
       userData={{ editKind: 'floor', editOwnerId: space.spaceIndex }}
+      onPointerDown={(e) => {
+        if (e.button !== 0) return;
+        e.stopPropagation();
+        selectMesh(selected ? null : myKey);
+      }}
     >
       <meshStandardMaterial
-        color={color}
-        roughness={0.95}
-        metalness={0.0}
+        color={effectiveColor}
+        roughness={effectiveRoughness}
+        metalness={effectiveMetalness}
+        opacity={effectiveOpacity}
+        transparent={effectiveOpacity < 1}
+        emissive={override?.emissive ?? '#000000'}
+        emissiveIntensity={override?.emissiveIntensity ?? 0}
         side={DoubleSide}
         shadowSide={DoubleSide}
       />

@@ -15,6 +15,7 @@ import { Space } from '@/domain/structures/Space';
 import { buildSpaces } from '@/domain/layout/SpaceBuilder';
 import { alignSnap, type DragGuide } from '@/features/drawing/snapHelpers';
 import { DragGuideLines } from '@/features/drawing/DragGuideLines';
+import { useMeshSelectionStore, meshKey } from '@/features/selection/meshSelectionStore';
 
 const _csgEval = new Evaluator();
 
@@ -144,6 +145,11 @@ export function WallView({ wall, color = '#cccccc' }: { wall: Wall; color?: stri
     ];
   }, [wall.startNode, wall.endNode, wall.border]);
 
+  // mesh material override (reactive — Inspector 변경 즉시 반영)
+  const myMeshKey = meshKey('wall', wall.wallIndex);
+  const meshOverride = useMeshSelectionStore((s) => s.materials[myMeshKey]);
+  const selectMesh = useMeshSelectionStore((s) => s.selectMesh);
+
   if (geometry === null) return null;
 
   const wallColor = dragging
@@ -154,7 +160,7 @@ export function WallView({ wall, color = '#cccccc' }: { wall: Wall; color?: stri
         ? '#ffc107'
         : is2D
           ? '#555555'
-          : color;
+          : meshOverride?.color ?? color;
 
   const onPointerDown = (e: ThreeEvent<PointerEvent>) => {
     // 3D 모드는 wall 인터랙티브 전면 비활성 — 카메라 회전 시 wall 클릭 충돌 방지
@@ -243,7 +249,10 @@ export function WallView({ wall, color = '#cccccc' }: { wall: Wall; color?: stri
       } else {
         // 클릭(드래그 안 함) — 선택 토글. 3D 모드에서도 wall 선택만은 허용.
         const cur = useSelectionStore.getState().selectedWall;
-        useSelectionStore.getState().selectWall(cur === wall ? null : wall);
+        const next = cur === wall ? null : wall;
+        useSelectionStore.getState().selectWall(next);
+        // mesh inspector 동기화 — wall 선택 시 그 wall 의 material 도 inspector 에 표시
+        selectMesh(next ? myMeshKey : null);
       }
     };
 
@@ -273,8 +282,12 @@ export function WallView({ wall, color = '#cccccc' }: { wall: Wall; color?: stri
         >
           <meshStandardMaterial
             color={wallColor}
-            roughness={0.85}
-            metalness={0.0}
+            roughness={meshOverride?.roughness ?? 0.85}
+            metalness={meshOverride?.metalness ?? 0.0}
+            opacity={meshOverride?.opacity ?? 1.0}
+            transparent={(meshOverride?.opacity ?? 1) < 1}
+            emissive={meshOverride?.emissive ?? '#000000'}
+            emissiveIntensity={meshOverride?.emissiveIntensity ?? 0}
             side={DoubleSide}
             shadowSide={DoubleSide}
           />
