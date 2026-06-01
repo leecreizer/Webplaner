@@ -168,10 +168,11 @@ function SceneLights() {
   const hemiVisible = useLightingStore((s) => s.hemiVisible);
   const position = sphericalToCartesian(azimuth, elevation, distance);
   const mapSize = shadowMapSizeFor(shadowQuality);
-  // shadowStrength = 그림자 진하기. *간접광 전체*를 감쇠해 어두운 영역이 더 어두워지게.
-  // ambient 는 가장 크게 줄이고, hemi 도 비슷, env (HDR) 는 sky 가시성 유지를 위해 약하게.
-  const ambientFactor = 1 - shadowStrength * 0.85;
-  const hemiFactor = 1 - shadowStrength * 0.75;
+  // shadowStrength = 그림자 진하기. 1.0 에서 간접광 거의 0 → 그림자 영역이 검정에 근접.
+  // clamp 로 음수 방지. ambient/hemi 는 거의 완전 차단, env 는 조금 남겨 mesh 가 시각화는
+  // 유지 (env=0 이면 PBR mesh 가 완전 검정이 됨 — 햇빛 영역도 detail 잃음).
+  const ambientFactor = Math.max(0, 1 - shadowStrength * 0.98);
+  const hemiFactor = Math.max(0, 1 - shadowStrength * 0.95);
   const effectiveAmbient = ambientIntensity * ambientFactor;
   const hemiActive = giMode === 'hemisphere' && hemiVisible;
 
@@ -213,7 +214,8 @@ function SceneEnvironment() {
   const shadowStrength = useLightingStore((s) => s.shadowStrength);
   // shadowStrength 가 env IBL 도 살짝 감쇠 — env 가 indirect 의 큰 부분을 차지하므로
   // 적용 안 하면 shadowStrength 슬라이더 변화가 거의 안 보임. sky 가시성 유지 위해 약하게.
-  const envFactor = 1 - shadowStrength * 0.5;
+  // env 는 햇빛 영역의 PBR 디테일(반사, fresnel) 보존에 필요해 30% 만 남김.
+  const envFactor = Math.max(0, 1 - shadowStrength * 0.85);
   return (
     <Environment preset={preset} background={background} environmentIntensity={intensity * envFactor} />
   );
