@@ -87,6 +87,16 @@ export function LightInspector() {
             checked={light.castShadow ?? false}
             onChange={(v) => set({ castShadow: v })}
           />
+          {light.castShadow && (
+            <NumberField
+              label="그림자 소프트니스"
+              value={light.shadowRadius ?? 4}
+              min={0}
+              max={20}
+              step={0.5}
+              onChange={(v) => set({ shadowRadius: v })}
+            />
+          )}
         </Section>
       )}
 

@@ -49,8 +49,8 @@ function CustomLightInstance({ light: l, selected }: { light: CustomLight; selec
       {l.kind === 'point' && (
         <pointLight
           // shadow 관련 prop 이 변경되면 강제 remount — three.js 가 shadow map 텍스처를
-          // light 생성 시점에 한 번 할당하므로 castShadow toggle 이나 mapSize 변경 즉시 반영용
-          key={`pt-${l.castShadow ? 1 : 0}`}
+          // light 생성 시점에 한 번 할당하므로 castShadow / radius / mapSize 변경 즉시 반영용
+          key={`pt-${l.castShadow ? 1 : 0}-${l.shadowRadius ?? 4}`}
           position={l.position}
           color={l.color}
           intensity={l.intensity}
@@ -60,6 +60,8 @@ function CustomLightInstance({ light: l, selected }: { light: CustomLight; selec
           // 인테리어 스케일 (~5m 룸) 에 맞는 cube shadow map 설정.
           // 디폴트 mapSize=512 / camera-far=500 은 acne + 정밀도 부족으로 검은 띠/얼룩 유발.
           shadow-mapSize={[1024, 1024]}
+          shadow-radius={l.shadowRadius ?? 4}
+          shadow-blurSamples={Math.max(4, Math.min(25, Math.round((l.shadowRadius ?? 4) * 2)))}
           shadow-bias={-0.0005}
           shadow-normalBias={0.02}
           shadow-camera-near={0.1}
@@ -135,7 +137,7 @@ function SpotWithTarget({ light: l }: { light: CustomLight }) {
     <>
       <primitive object={target} />
       <spotLight
-        key={`sp-${l.castShadow ? 1 : 0}-${(l.angle ?? 0).toFixed(2)}`}
+        key={`sp-${l.castShadow ? 1 : 0}-${(l.angle ?? 0).toFixed(2)}-${l.shadowRadius ?? 4}`}
         position={l.position}
         color={l.color}
         intensity={l.intensity}
@@ -147,6 +149,8 @@ function SpotWithTarget({ light: l }: { light: CustomLight }) {
         target={target}
         // 인테리어 스케일 spot shadow — 디폴트 frustum/bias 가 acne 유발.
         shadow-mapSize={[1024, 1024]}
+        shadow-radius={l.shadowRadius ?? 4}
+        shadow-blurSamples={Math.max(4, Math.min(25, Math.round((l.shadowRadius ?? 4) * 2)))}
         shadow-bias={-0.0005}
         shadow-normalBias={0.02}
         shadow-camera-near={0.1}

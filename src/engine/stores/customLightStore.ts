@@ -42,6 +42,8 @@ export interface CustomLight {
   groundColor?: string;
   /** 그림자 캐스팅 여부 (point/spot). */
   castShadow?: boolean;
+  /** 그림자 가장자리 부드러움 (PCFShadowMap `shadow.radius`). 큰 값 = 더 부드러움. 0=hard. */
+  shadowRadius?: number;
 }
 
 export interface CustomLightState {
@@ -70,6 +72,7 @@ function defaultsFor(kind: LightKind): Omit<CustomLight, 'id' | 'name'> {
         distance: 10,
         decay: 2,
         castShadow: true,
+        shadowRadius: 4,
       };
     case 'spot':
       return {
@@ -83,6 +86,7 @@ function defaultsFor(kind: LightKind): Omit<CustomLight, 'id' | 'name'> {
         penumbra: 0.4,
         target: [0, 0, 0],
         castShadow: true,
+        shadowRadius: 4,
       };
     case 'rect':
       return {
