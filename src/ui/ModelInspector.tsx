@@ -1,4 +1,9 @@
-import { useImportedModelStore, type GizmoMode } from '@/features/models/importedModelStore';
+import { useState } from 'react';
+import {
+  useImportedModelStore,
+  type GizmoMode,
+  type MaterialPreset,
+} from '@/features/models/importedModelStore';
 
 /**
  * 불러온 모델 편집 우측 패널 — selectedId 있을 때만 표시.
@@ -96,6 +101,8 @@ export function ModelInspector() {
         />
       </Section>
 
+      <MaterialSection modelId={model.id} />
+
       <div style={{ display: 'flex', gap: 6 }}>
         <button
           onClick={() => update(model.id, { position: [0, 0, 0], rotation: [0, 0, 0], scale: 1 })}
@@ -186,6 +193,100 @@ function Section({ title, children }: { title: string; children: React.ReactNode
       <div style={sectionTitleStyle}>{title}</div>
       {children}
     </div>
+  );
+}
+
+const PRESETS: { p: MaterialPreset; label: string }[] = [
+  { p: 'metal', label: '금속' },
+  { p: 'glass', label: '유리' },
+  { p: 'plastic', label: '플라스틱' },
+  { p: 'ceramic', label: '세라믹' },
+  { p: 'wood', label: '우드' },
+  { p: 'rubber', label: '고무' },
+  { p: 'emissive', label: '발광' },
+];
+
+/** 머티리얼 (PBR) 편집 섹션 — 슬롯 선택 → 속성 편집 + 프리셋 적용(추가) + 리셋(삭제). */
+function MaterialSection({ modelId }: { modelId: string }) {
+  const models = useImportedModelStore((s) => s.models);
+  const editMaterial = useImportedModelStore((s) => s.editMaterial);
+  const resetMaterial = useImportedModelStore((s) => s.resetMaterial);
+  const applyPreset = useImportedModelStore((s) => s.applyMaterialPreset);
+  const [selKey, setSelKey] = useState<string | null>(null);
+
+  const model = models.find((m) => m.id === modelId);
+  const slots = model?.materialSlots ?? [];
+  if (slots.length === 0) {
+    return (
+      <Section title="머티리얼 (PBR)">
+        <div style={{ fontSize: 10, opacity: 0.5 }}>로딩 중… (모델 머티리얼 감지)</div>
+      </Section>
+    );
+  }
+  const activeKey = selKey ?? slots[0].key;
+  const slot = slots.find((s) => s.key === activeKey) ?? slots[0];
+  const edit = model?.materialEdits?.[slot.key] ?? {};
+  const val = <K extends keyof typeof slot.original>(k: K) =>
+    (edit[k] ?? slot.original[k]) as number;
+  const colorVal = (k: 'color' | 'emissive') => (edit[k] ?? slot.original[k] ?? '#ffffff') as string;
+  const set = (patch: Parameters<typeof editMaterial>[2]) => editMaterial(modelId, slot.key, patch);
+
+  return (
+    <Section title={`머티리얼 (PBR) · ${slots.length}개`}>
+      {/* 슬롯 선택 */}
+      <select
+        value={slot.key}
+        onChange={(e) => setSelKey(e.target.value)}
+        style={{ ...numInputStyle, width: '100%', marginBottom: 6 }}
+      >
+        {slots.map((s) => (
+          <option key={s.key} value={s.key}>{s.name}</option>
+        ))}
+      </select>
+
+      {/* 프리셋 (추가 = 새 머티리얼 룩) */}
+      <div style={{ fontSize: 10, opacity: 0.6, marginBottom: 2 }}>프리셋 적용</div>
+      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 3, marginBottom: 8 }}>
+        {PRESETS.map(({ p, label }) => (
+          <button
+            key={p}
+            onClick={() => applyPreset(modelId, slot.key, p)}
+            style={{
+              padding: '3px 7px', fontSize: 10, borderRadius: 3, cursor: 'pointer',
+              border: '1px solid #3f3f46', background: '#27272a', color: '#e5e5e5',
+            }}
+          >
+            {label}
+          </button>
+        ))}
+      </div>
+
+      <ColorRow label="베이스색" value={colorVal('color')} onChange={(v) => set({ color: v })} />
+      <NumberRow label="거칠기" value={val('roughness')} min={0} max={1} step={0.02} onChange={(v) => set({ roughness: v })} />
+      <NumberRow label="금속성" value={val('metalness')} min={0} max={1} step={0.02} onChange={(v) => set({ metalness: v })} />
+      <NumberRow label="투과(유리)" value={val('transmission')} min={0} max={1} step={0.02} onChange={(v) => set({ transmission: v })} />
+      <NumberRow label="굴절률" value={val('ior')} min={1} max={2.5} step={0.01} onChange={(v) => set({ ior: v })} />
+      <NumberRow label="클리어코트" value={val('clearcoat')} min={0} max={1} step={0.02} onChange={(v) => set({ clearcoat: v })} />
+      <NumberRow label="투명도" value={val('opacity')} min={0} max={1} step={0.02} onChange={(v) => set({ opacity: v })} />
+      <ColorRow label="발광색" value={colorVal('emissive')} onChange={(v) => set({ emissive: v })} />
+      <NumberRow label="발광강도" value={val('emissiveIntensity')} min={0} max={5} step={0.05} onChange={(v) => set({ emissiveIntensity: v })} />
+
+      <button onClick={() => resetMaterial(modelId, slot.key)} style={{ ...resetBtnStyle, width: '100%', marginTop: 4 }}>
+        ↺ 이 머티리얼 원본 복원 (삭제)
+      </button>
+    </Section>
+  );
+}
+
+function ColorRow({ label, value, onChange }: { label: string; value: string; onChange: (v: string) => void }) {
+  return (
+    <label style={rowStyle}>
+      <span style={lblStyle}>{label}</span>
+      <input type="color" value={value} onChange={(e) => onChange(e.target.value)}
+        style={{ width: 34, height: 20, padding: 0, border: 'none', background: 'none' }} />
+      <input type="text" value={value} onChange={(e) => onChange(e.target.value)}
+        style={{ ...numInputStyle, flex: 1 }} />
+    </label>
   );
 }
 
