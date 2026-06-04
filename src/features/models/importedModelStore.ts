@@ -18,9 +18,14 @@ export interface ImportedModel {
   visible: boolean;
 }
 
+/** TransformControls 조작 모드. */
+export type GizmoMode = 'translate' | 'rotate' | 'scale';
+
 export interface ImportedModelState {
   models: ImportedModel[];
   selectedId: string | null;
+  /** 선택 모델에 적용되는 gizmo 모드 (이동/회전/크기). */
+  gizmoMode: GizmoMode;
 
   /** 파일에서 모델 추가 — blob URL 생성 후 등록. id 반환. */
   addFromFile: (file: File) => string;
@@ -29,6 +34,7 @@ export interface ImportedModelState {
   remove: (id: string) => void;
   update: (id: string, patch: Partial<ImportedModel>) => void;
   select: (id: string | null) => void;
+  setGizmoMode: (m: GizmoMode) => void;
   clearAll: () => void;
 }
 
@@ -41,6 +47,7 @@ function formatOf(name: string): 'glb' | 'gltf' {
 export const useImportedModelStore = create<ImportedModelState>((set) => ({
   models: [],
   selectedId: null,
+  gizmoMode: 'translate',
 
   addFromFile: (file) => {
     const id = `model-${++_seq}`;
@@ -92,6 +99,7 @@ export const useImportedModelStore = create<ImportedModelState>((set) => ({
     })),
 
   select: (id) => set({ selectedId: id }),
+  setGizmoMode: (m) => set({ gizmoMode: m }),
 
   clearAll: () =>
     set((s) => {

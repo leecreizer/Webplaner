@@ -34,6 +34,7 @@ import { LightInspector } from './ui/LightInspector';
 import { MeshInspector } from './ui/MeshInspector';
 import { SceneOutliner } from './ui/SceneOutliner';
 import { BuiltinLightInspector } from './ui/BuiltinLightInspector';
+import { ModelInspector } from './ui/ModelInspector';
 import { HostProvider } from './host/HostContext';
 import type { HostEventHandlers } from './host/HostEvents';
 
@@ -74,6 +75,7 @@ export default function App({
         {showLightingPanel && <MeshInspector />}
         {showLightingPanel && <SceneOutliner />}
         {showLightingPanel && <BuiltinLightInspector />}
+        {showLightingPanel && <ModelInspector />}
         <Canvas
           shadows={{ type: PCFShadowMap }}
           // 디스플레이 해상도(devicePixelRatio)에 맞춰 렌더 — 고DPI 화면에서 선명. r3f Canvas 는

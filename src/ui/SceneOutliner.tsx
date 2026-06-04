@@ -4,6 +4,7 @@ import { useLightingStore, type BuiltinLightKind } from '@/engine/stores/lightin
 import { useMeshSelectionStore, meshKey } from '@/features/selection/meshSelectionStore';
 import { useSelectionStore } from '@/features/selection/selectionStore';
 import { useVisibilityStore } from '@/features/scene/visibilityStore';
+import { useImportedModelStore } from '@/features/models/importedModelStore';
 import { Wall } from '@/domain/structures/Wall';
 import { Space } from '@/domain/structures/Space';
 import { buildSpaces } from '@/domain/layout/SpaceBuilder';
@@ -30,6 +31,13 @@ export function SceneOutliner() {
   const removeLight = useCustomLightStore((s) => s.remove);
   const hidden = useVisibilityStore((s) => s.hidden);
   const toggle = useVisibilityStore((s) => s.toggle);
+
+  // 불러온 모델
+  const importedModels = useImportedModelStore((s) => s.models);
+  const selectedModelId = useImportedModelStore((s) => s.selectedId);
+  const selectModel = useImportedModelStore((s) => s.select);
+  const removeModel = useImportedModelStore((s) => s.remove);
+  const updateModel = useImportedModelStore((s) => s.update);
 
   // 기본 광원
   const selectedBuiltin = useLightingStore((s) => s.selectedBuiltin);
@@ -130,6 +138,21 @@ export function SceneOutliner() {
             />
           );
         })}
+      </Section>
+
+      <Section title={`불러온 모델 (${importedModels.length})`}>
+        {importedModels.length === 0 && <Empty />}
+        {importedModels.map((mdl) => (
+          <Row
+            key={mdl.id}
+            label={`📦 ${mdl.name}`}
+            isSelected={selectedModelId === mdl.id}
+            isHidden={!mdl.visible}
+            onSelect={() => selectModel(selectedModelId === mdl.id ? null : mdl.id)}
+            onToggle={() => updateModel(mdl.id, { visible: !mdl.visible })}
+            onDelete={() => removeModel(mdl.id)}
+          />
+        ))}
       </Section>
     </div>
   );
