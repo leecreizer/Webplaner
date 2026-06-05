@@ -5,7 +5,7 @@ import { useLayoutStore, layoutRegistry } from '@/domain/state/layoutStore';
 import { buildSpaces } from '@/domain/layout/SpaceBuilder';
 import { useCustomLightStore, type LightKind } from '@/engine/stores/customLightStore';
 import { useEditStore } from '@/features/editing/editStore';
-import { useImportedModelStore } from '@/features/models/importedModelStore';
+import { useImportedModelStore, type PrimitiveKind } from '@/features/models/importedModelStore';
 
 const LIGHT_OPTIONS: { kind: LightKind; label: string; desc: string }[] = [
   { kind: 'point', label: '포인트 (옴니)', desc: '360° 점 광원' },
@@ -86,6 +86,7 @@ export function Toolbar() {
       </button>
 
       <AddLightDropdown />
+      <AddPrimitiveDropdown />
       <ImportModelButton />
       <EditModeControls />
       <button onClick={reset} style={dangerButtonStyle}>
@@ -246,6 +247,58 @@ function AddLightDropdown() {
               >
                 <span style={{ fontWeight: 600 }}>{o.label}</span>
                 <span style={{ color: '#888', fontSize: 11 }}>{o.desc}</span>
+              </button>
+            ))}
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
+
+const PRIMITIVE_OPTIONS: { kind: PrimitiveKind; label: string; icon: string }[] = [
+  { kind: 'box', label: '박스', icon: '⬛' },
+  { kind: 'sphere', label: '구', icon: '⚫' },
+  { kind: 'plane', label: '평면', icon: '▭' },
+  { kind: 'cone', label: '원뿔', icon: '🔺' },
+  { kind: 'cylinder', label: '실린더', icon: '🥫' },
+  { kind: 'torus', label: '토러스', icon: '🍩' },
+  { kind: 'torusKnot', label: '토러스 매듭', icon: '🪢' },
+  { kind: 'teapot', label: '주전자', icon: '🫖' },
+  { kind: 'tube', label: '튜브', icon: '〰️' },
+];
+
+/**
+ * "기본 도형 추가" 드롭다운 — primitive geometry 를 씬에 추가. 추가된 도형은 imported model 과
+ * 동일하게 선택/이동/회전/크기/PBR 머티리얼 편집 가능.
+ */
+function AddPrimitiveDropdown() {
+  const [open, setOpen] = useState(false);
+  const addPrimitive = useImportedModelStore((s) => s.addPrimitive);
+
+  return (
+    <div style={{ position: 'relative' }}>
+      <button
+        onClick={() => setOpen((v) => !v)}
+        style={open ? activeButtonStyle : buttonStyle}
+        title="기본 도형(박스/구/원뿔 등)을 씬에 추가"
+      >
+        ◇ 기본 도형 ▾
+      </button>
+      {open && (
+        <>
+          <div onClick={() => setOpen(false)} style={{ position: 'fixed', inset: 0, zIndex: 10 }} />
+          <div style={dropdownStyle}>
+            {PRIMITIVE_OPTIONS.map((o) => (
+              <button
+                key={o.kind}
+                onClick={() => {
+                  addPrimitive(o.kind);
+                  setOpen(false);
+                }}
+                style={dropdownItemStyle}
+              >
+                <span style={{ fontWeight: 600 }}>{o.icon} {o.label}</span>
               </button>
             ))}
           </div>

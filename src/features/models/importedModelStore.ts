@@ -35,12 +35,18 @@ export interface MaterialSlot {
 export type MaterialPreset =
   | 'metal' | 'glass' | 'plastic' | 'ceramic' | 'wood' | 'rubber' | 'emissive';
 
+/** 기본 도형(primitive) 종류. */
+export type PrimitiveKind =
+  | 'plane' | 'box' | 'sphere' | 'cone' | 'cylinder' | 'torus' | 'torusKnot' | 'teapot' | 'tube';
+
 export interface ImportedModel {
   id: string;
   name: string;
-  /** blob URL (URL.createObjectURL) 또는 외부 http URL. */
+  /** blob URL / http URL. primitive 모델이면 빈 문자열. */
   url: string;
-  format: 'glb' | 'gltf';
+  /** 설정 시 GLTF 대신 기본 도형 geometry 로 렌더. */
+  primitive?: PrimitiveKind;
+  format: 'glb' | 'gltf' | 'primitive';
   position: [number, number, number];
   rotation: [number, number, number]; // degrees
   scale: number;
@@ -64,6 +70,8 @@ export interface ImportedModelState {
   addFromFile: (file: File) => string;
   /** URL 로 직접 추가 (외부 호스팅 모델). */
   addFromUrl: (url: string, name?: string) => string;
+  /** 기본 도형 추가 (plane/box/sphere/...). id 반환. */
+  addPrimitive: (kind: PrimitiveKind) => string;
   remove: (id: string) => void;
   update: (id: string, patch: Partial<ImportedModel>) => void;
   select: (id: string | null) => void;
@@ -149,6 +157,28 @@ export const useImportedModelStore = create<ImportedModelState>((set) => ({
     set((s) => ({
       models: s.models.map((m) => (m.id === id ? { ...m, ...patch } : m)),
     })),
+
+  addPrimitive: (kind) => {
+    const id = `model-${++_seq}`;
+    const label: Record<PrimitiveKind, string> = {
+      plane: '평면', box: '박스', sphere: '구', cone: '원뿔', cylinder: '실린더',
+      torus: '토러스', torusKnot: '토러스매듭', teapot: '주전자', tube: '튜브',
+    };
+    const model: ImportedModel = {
+      id,
+      name: `${label[kind]}-${_seq}`,
+      url: '',
+      primitive: kind,
+      format: 'primitive',
+      // 바닥(y=0) 위에 적당히 떠 있게 — geometry 마다 중심 다르므로 0.5m
+      position: [0, 0.5, 0],
+      rotation: [0, 0, 0],
+      scale: 1,
+      visible: true,
+    };
+    set((s) => ({ models: [...s.models, model], selectedId: id }));
+    return id;
+  },
 
   select: (id) => set({ selectedId: id }),
   setGizmoMode: (m) => set({ gizmoMode: m }),
