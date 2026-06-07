@@ -96,8 +96,9 @@ function ModelBody({ model, obj: rawObj }: { model: ImportedModel; obj: Object3D
       const mats = Array.isArray(mesh.material) ? mesh.material : [mesh.material];
       const converted = mats.map((m) => {
         const std = m as MeshStandardMaterial;
-        const phys = new MeshPhysicalMaterial();
-        phys.copy(std as unknown as MeshPhysicalMaterial);
+        // ⚠️ MeshPhysicalMaterial.copy(standard) 는 Standard 에 없는 Vector2(clearcoatNormalScale
+        // 등)를 읽다 crash → 안전하게 공통 PBR 속성만 수동 이전.
+        const phys = standardToPhysical(std);
         const key = std.name && std.name.length ? std.name : `mat-${idx}`;
         idx++;
         if (!matMap.has(key)) {
@@ -208,6 +209,43 @@ function ModelBody({ model, obj: rawObj }: { model: ImportedModel; obj: Object3D
       )}
     </>
   );
+}
+
+/**
+ * MeshStandardMaterial(또는 이미 Physical) → MeshPhysicalMaterial 안전 변환.
+ * MeshPhysicalMaterial.copy() 는 source 에 physical-only Vector2 속성이 없으면 crash 하므로
+ * 공통 PBR 속성만 수동 이전한다 (맵은 참조 공유 — 텍스처 메모리 절약).
+ */
+function standardToPhysical(std: MeshStandardMaterial): MeshPhysicalMaterial {
+  const phys = new MeshPhysicalMaterial();
+  phys.name = std.name;
+  phys.color.copy(std.color);
+  phys.roughness = std.roughness;
+  phys.metalness = std.metalness;
+  phys.emissive.copy(std.emissive);
+  phys.emissiveIntensity = std.emissiveIntensity;
+  phys.opacity = std.opacity;
+  phys.transparent = std.transparent;
+  phys.side = std.side;
+  phys.flatShading = std.flatShading;
+  phys.vertexColors = std.vertexColors;
+  phys.wireframe = std.wireframe;
+  phys.envMapIntensity = std.envMapIntensity;
+  // 텍스처 맵 — 참조 공유
+  phys.map = std.map;
+  phys.normalMap = std.normalMap;
+  if (std.normalScale) phys.normalScale.copy(std.normalScale);
+  phys.roughnessMap = std.roughnessMap;
+  phys.metalnessMap = std.metalnessMap;
+  phys.emissiveMap = std.emissiveMap;
+  phys.aoMap = std.aoMap;
+  phys.aoMapIntensity = std.aoMapIntensity;
+  phys.alphaMap = std.alphaMap;
+  phys.bumpMap = std.bumpMap;
+  phys.bumpScale = std.bumpScale;
+  phys.displacementMap = std.displacementMap;
+  phys.needsUpdate = true;
+  return phys;
 }
 
 /** primitive 종류 → geometry. 인테리어 스케일(~0.5m). */
