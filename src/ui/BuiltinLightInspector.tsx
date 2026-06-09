@@ -1,4 +1,5 @@
 import { useLightingStore } from '@/engine/stores/lightingStore';
+import { DraggablePanel } from '@/ui/panels/DraggablePanel';
 
 /**
  * 기본 광원 (Sun / Ambient / Hemisphere) 편집 우측 패널.
@@ -12,14 +13,17 @@ import { useLightingStore } from '@/engine/stores/lightingStore';
 export function BuiltinLightInspector() {
   const sel = useLightingStore((s) => s.selectedBuiltin);
   if (!sel) return null;
+  const title =
+    sel === 'sun' ? '☀ 태양광 (Directional)' : sel === 'ambient' ? '○ 환경광 (Ambient)' : '◐ 헤미스피어';
   return (
-    <div style={panelStyle}>
-      <header style={headerStyle}>
-        <span style={titleStyle}>
-          {sel === 'sun' && '☀ 태양광 (Directional)'}
-          {sel === 'ambient' && '○ 환경광 (Ambient)'}
-          {sel === 'hemi' && '◐ 헤미스피어'}
-        </span>
+    <DraggablePanel
+      id="builtin-light-inspector"
+      title={title}
+      defaultSide="right"
+      defaultTop={80}
+      width={280}
+      accent="#fbbf24"
+      right={
         <button
           onClick={() => useLightingStore.getState().setSelectedBuiltin(null)}
           style={closeBtnStyle}
@@ -27,12 +31,12 @@ export function BuiltinLightInspector() {
         >
           ✕
         </button>
-      </header>
-
+      }
+    >
       {sel === 'sun' && <SunInspector />}
       {sel === 'ambient' && <AmbientInspector />}
       {sel === 'hemi' && <HemiInspector />}
-    </div>
+    </DraggablePanel>
   );
 }
 
@@ -230,40 +234,6 @@ function CheckboxField({
     </label>
   );
 }
-
-const panelStyle: React.CSSProperties = {
-  position: 'fixed',
-  top: 80,
-  right: 340,
-  width: 280,
-  maxHeight: 'calc(100vh - 120px)',
-  overflowY: 'auto',
-  background: 'rgba(20, 20, 22, 0.95)',
-  color: '#e5e5e5',
-  border: '1px solid #3f3f46',
-  borderRadius: 6,
-  padding: 10,
-  fontFamily: 'system-ui, sans-serif',
-  fontSize: 12,
-  zIndex: 91,
-  boxShadow: '0 4px 12px rgba(0,0,0,0.5)',
-};
-
-const headerStyle: React.CSSProperties = {
-  display: 'flex',
-  alignItems: 'center',
-  gap: 6,
-  paddingBottom: 8,
-  marginBottom: 8,
-  borderBottom: '1px solid #3f3f46',
-};
-
-const titleStyle: React.CSSProperties = {
-  flex: 1,
-  fontSize: 13,
-  fontWeight: 600,
-  color: '#fbbf24',
-};
 
 const closeBtnStyle: React.CSSProperties = {
   width: 22,

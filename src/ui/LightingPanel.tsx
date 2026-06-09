@@ -7,6 +7,7 @@ import {
 } from '@/engine/stores/lightingStore';
 import { useViewStore } from '@/engine/stores/viewStore';
 import { useCustomLightStore, type LightKind, type CustomLight } from '@/engine/stores/customLightStore';
+import { DraggablePanel } from '@/ui/panels/DraggablePanel';
 
 const LIGHT_KINDS: { kind: LightKind; label: string }[] = [
   { kind: 'point', label: '포인트 (옴니)' },
@@ -47,12 +48,24 @@ export function LightingPanel() {
   const v = useViewStore();
 
   return (
-    <div style={containerStyle}>
-      <button onClick={() => setOpen((o) => !o)} style={open ? activeBtnStyle : btnStyle}>
-        ☀ 조명·렌더 {open ? '▾' : '▸'}
-      </button>
+    <>
+      <div style={containerStyle}>
+        <button onClick={() => setOpen((o) => !o)} style={open ? activeBtnStyle : btnStyle}>
+          ☀ 조명·렌더 {open ? '▾' : '▸'}
+        </button>
+      </div>
       {open && (
-        <div style={panelStyle}>
+        <DraggablePanel
+          id="lighting-panel"
+          title="☀ 조명·렌더"
+          defaultSide="right"
+          defaultTop={80}
+          width={300}
+          accent="#fbbf24"
+          right={
+            <button onClick={() => setOpen(false)} style={closeBtnStyle} title="닫기">✕</button>
+          }
+        >
           <Section title="광원">
             <Slider label="방위각" unit="°" min={-180} max={180} step={1} value={s.azimuth} onChange={s.setAzimuth} />
             <Slider label="고도" unit="°" min={0} max={90} step={1} value={s.elevation} onChange={s.setElevation} />
@@ -231,9 +244,9 @@ export function LightingPanel() {
           <button onClick={s.reset} style={resetBtnStyle}>
             기본값 복원
           </button>
-        </div>
+        </DraggablePanel>
       )}
-    </div>
+    </>
   );
 }
 
@@ -509,17 +522,16 @@ const activeBtnStyle: React.CSSProperties = {
   fontWeight: 600,
 };
 
-const panelStyle: React.CSSProperties = {
-  width: 280,
-  maxHeight: '80vh',
-  overflowY: 'auto',
-  padding: 12,
-  background: 'rgba(20, 20, 24, 0.95)',
-  border: '1px solid #333',
-  borderRadius: 8,
-  display: 'flex',
-  flexDirection: 'column',
-  gap: 14,
+const closeBtnStyle: React.CSSProperties = {
+  width: 22,
+  height: 22,
+  padding: 0,
+  background: 'transparent',
+  color: '#a1a1aa',
+  border: '1px solid #3f3f46',
+  borderRadius: 3,
+  cursor: 'pointer',
+  fontSize: 12,
 };
 
 const sectionStyle: React.CSSProperties = {

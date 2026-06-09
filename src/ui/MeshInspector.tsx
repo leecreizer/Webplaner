@@ -1,4 +1,5 @@
 import { useMeshSelectionStore, type MeshMaterialOverride } from '@/features/selection/meshSelectionStore';
+import { DraggablePanel } from '@/ui/panels/DraggablePanel';
 
 /**
  * 선택된 mesh (wall / floor / ceiling) 의 material 속성 편집 패널.
@@ -22,15 +23,17 @@ export function MeshInspector() {
   const set = (patch: MeshMaterialOverride) => setMaterial(selectedKey, patch);
 
   return (
-    <div style={panelStyle}>
-      <header style={headerStyle}>
-        <span style={{ fontSize: 11, opacity: 0.7 }}>{kindLabel(kind)}</span>
-        <span style={titleStyle}>#{ownerId}</span>
-        <button onClick={() => selectMesh(null)} title="선택 해제" style={closeBtnStyle}>
-          ✕
-        </button>
-      </header>
-
+    <DraggablePanel
+      id="mesh-inspector"
+      title={`${kindLabel(kind)} #${ownerId}`}
+      defaultSide="right"
+      defaultTop={400}
+      width={300}
+      accent="#fbbf24"
+      right={
+        <button onClick={() => selectMesh(null)} title="선택 해제" style={closeBtnStyle}>✕</button>
+      }
+    >
       <Section title="Material">
         <ColorField label="색" value={override?.color ?? '#cccccc'} onChange={(v) => set({ color: v })} />
         <NumberField
@@ -78,7 +81,7 @@ export function MeshInspector() {
       <button onClick={() => resetMaterial(selectedKey)} style={resetBtnStyle}>
         ↺ 디폴트로 리셋
       </button>
-    </div>
+    </DraggablePanel>
   );
 }
 
@@ -160,38 +163,6 @@ function ColorField({
     </label>
   );
 }
-
-const panelStyle: React.CSSProperties = {
-  position: 'fixed',
-  bottom: 16,
-  left: 16,
-  width: 300,
-  background: 'rgba(20, 20, 22, 0.95)',
-  color: '#e5e5e5',
-  border: '1px solid #3f3f46',
-  borderRadius: 6,
-  padding: 10,
-  fontFamily: 'system-ui, sans-serif',
-  fontSize: 12,
-  zIndex: 90,
-  boxShadow: '0 4px 12px rgba(0,0,0,0.5)',
-};
-
-const headerStyle: React.CSSProperties = {
-  display: 'flex',
-  alignItems: 'center',
-  gap: 6,
-  paddingBottom: 8,
-  marginBottom: 8,
-  borderBottom: '1px solid #3f3f46',
-};
-
-const titleStyle: React.CSSProperties = {
-  flex: 1,
-  fontSize: 13,
-  fontWeight: 600,
-  color: '#fbbf24',
-};
 
 const closeBtnStyle: React.CSSProperties = {
   width: 22,

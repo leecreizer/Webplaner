@@ -4,6 +4,7 @@ import {
   type GizmoMode,
   type MaterialPreset,
 } from '@/features/models/importedModelStore';
+import { DraggablePanel } from '@/ui/panels/DraggablePanel';
 
 /**
  * 불러온 모델 편집 우측 패널 — selectedId 있을 때만 표시.
@@ -42,19 +43,26 @@ export function ModelInspector() {
   ];
 
   return (
-    <div style={panelStyle}>
-      <header style={headerStyle}>
-        <span style={{ fontSize: 11, opacity: 0.7 }}>📦 모델</span>
-        <input
-          value={model.name}
-          onChange={(e) => update(model.id, { name: e.target.value })}
-          style={nameInputStyle}
-        />
-        <button onClick={() => { remove(model.id); select(null); }} title="삭제" style={delBtnStyle}>
-          ✕
-        </button>
-      </header>
-
+    <DraggablePanel
+      id="model-inspector"
+      title="📦 모델"
+      defaultSide="right"
+      defaultTop={80}
+      width={280}
+      accent="#22d3ee"
+      right={
+        <>
+          <input
+            value={model.name}
+            onChange={(e) => update(model.id, { name: e.target.value })}
+            style={nameInputStyle}
+          />
+          <button onClick={() => { remove(model.id); select(null); }} title="삭제" style={delBtnStyle}>
+            ✕
+          </button>
+        </>
+      }
+    >
       <Section title="조작 모드 (gizmo)">
         <div style={{ display: 'flex', gap: 4 }}>
           {modes.map(({ m, label }) => (
@@ -118,7 +126,7 @@ export function ModelInspector() {
           ⊥ 바닥 정렬
         </button>
       </div>
-    </div>
+    </DraggablePanel>
   );
 }
 
@@ -289,33 +297,6 @@ function ColorRow({ label, value, onChange }: { label: string; value: string; on
     </label>
   );
 }
-
-const panelStyle: React.CSSProperties = {
-  position: 'fixed',
-  top: 80,
-  right: 340,
-  width: 280,
-  maxHeight: 'calc(100vh - 120px)',
-  overflowY: 'auto',
-  background: 'rgba(20, 20, 22, 0.95)',
-  color: '#e5e5e5',
-  border: '1px solid #3f3f46',
-  borderRadius: 6,
-  padding: 10,
-  fontFamily: 'system-ui, sans-serif',
-  fontSize: 12,
-  zIndex: 92,
-  boxShadow: '0 4px 12px rgba(0,0,0,0.5)',
-};
-
-const headerStyle: React.CSSProperties = {
-  display: 'flex',
-  alignItems: 'center',
-  gap: 6,
-  paddingBottom: 8,
-  marginBottom: 8,
-  borderBottom: '1px solid #3f3f46',
-};
 
 const nameInputStyle: React.CSSProperties = {
   flex: 1,

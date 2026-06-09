@@ -1,4 +1,5 @@
 import { useCustomLightStore, type CustomLight } from '@/engine/stores/customLightStore';
+import { DraggablePanel } from '@/ui/panels/DraggablePanel';
 
 /**
  * 선택된 커스텀 라이트의 모든 속성을 편집하는 floating panel.
@@ -32,26 +33,26 @@ export function LightInspector() {
   };
 
   return (
-    <div style={panelStyle}>
-      <header style={headerStyle}>
-        <span style={{ fontSize: 11, opacity: 0.7 }}>{kindLabel(light.kind)}</span>
-        <input
-          value={light.name}
-          onChange={(e) => set({ name: e.target.value })}
-          style={nameInputStyle}
-        />
-        <button
-          onClick={() => {
-            remove(light.id);
-            select(null);
-          }}
-          title="삭제"
-          style={delBtnStyle}
-        >
-          ✕
-        </button>
-      </header>
-
+    <DraggablePanel
+      id="light-inspector"
+      title={kindLabel(light.kind)}
+      defaultSide="right"
+      defaultTop={80}
+      width={280}
+      accent="#fbbf24"
+      right={
+        <>
+          <input
+            value={light.name}
+            onChange={(e) => set({ name: e.target.value })}
+            style={nameInputStyle}
+          />
+          <button onClick={() => { remove(light.id); select(null); }} title="삭제" style={delBtnStyle}>
+            ✕
+          </button>
+        </>
+      }
+    >
       <Section title="공통">
         <ColorField label="색" value={light.color} onChange={(v) => set({ color: v })} />
         <NumberField
@@ -169,7 +170,7 @@ export function LightInspector() {
           <Vec3Field label="position" value={light.position} onChange={(i, v) => setPos(i, v)} />
         </Section>
       )}
-    </div>
+    </DraggablePanel>
   );
 }
 
@@ -307,33 +308,6 @@ function Vec3Field({
 }
 
 // ============ styles ============
-
-const panelStyle: React.CSSProperties = {
-  position: 'fixed',
-  top: 80,
-  right: 340,
-  width: 280,
-  maxHeight: 'calc(100vh - 120px)',
-  overflowY: 'auto',
-  background: 'rgba(20, 20, 22, 0.95)',
-  color: '#e5e5e5',
-  border: '1px solid #3f3f46',
-  borderRadius: 6,
-  padding: 10,
-  fontFamily: 'system-ui, sans-serif',
-  fontSize: 12,
-  zIndex: 90,
-  boxShadow: '0 4px 12px rgba(0,0,0,0.5)',
-};
-
-const headerStyle: React.CSSProperties = {
-  display: 'flex',
-  alignItems: 'center',
-  gap: 6,
-  paddingBottom: 8,
-  marginBottom: 8,
-  borderBottom: '1px solid #3f3f46',
-};
 
 const nameInputStyle: React.CSSProperties = {
   flex: 1,

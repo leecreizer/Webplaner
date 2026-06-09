@@ -5,6 +5,7 @@ import { useMeshSelectionStore, meshKey } from '@/features/selection/meshSelecti
 import { useSelectionStore } from '@/features/selection/selectionStore';
 import { useVisibilityStore } from '@/features/scene/visibilityStore';
 import { useImportedModelStore } from '@/features/models/importedModelStore';
+import { DraggablePanel } from '@/ui/panels/DraggablePanel';
 import { Wall } from '@/domain/structures/Wall';
 import { Space } from '@/domain/structures/Space';
 import { buildSpaces } from '@/domain/layout/SpaceBuilder';
@@ -53,11 +54,7 @@ export function SceneOutliner() {
   ];
 
   return (
-    <div style={panelStyle}>
-      <header style={headerStyle}>
-        <span>🌳 씬 트리</span>
-      </header>
-
+    <DraggablePanel id="outliner" title="🌳 씬 트리" defaultSide="left" defaultTop={80} width={240} accent="#a3e635">
       <Section title={`벽 (${walls.length})`}>
         {walls.length === 0 && <Empty />}
         {walls.map((w) => {
@@ -154,7 +151,7 @@ export function SceneOutliner() {
           />
         ))}
       </Section>
-    </div>
+    </DraggablePanel>
   );
 }
 
@@ -241,31 +238,6 @@ function deleteWall(w: Wall): void {
 }
 
 // ============ styles ============
-
-const panelStyle: React.CSSProperties = {
-  position: 'fixed',
-  top: 80,
-  left: 16,
-  width: 240,
-  maxHeight: 'calc(100vh - 120px)',
-  overflowY: 'auto',
-  background: 'rgba(20, 20, 22, 0.95)',
-  color: '#e5e5e5',
-  border: '1px solid #3f3f46',
-  borderRadius: 6,
-  padding: 10,
-  fontFamily: 'system-ui, sans-serif',
-  fontSize: 12,
-  zIndex: 80,
-  boxShadow: '0 4px 12px rgba(0,0,0,0.5)',
-};
-
-const headerStyle: React.CSSProperties = {
-  fontWeight: 600,
-  paddingBottom: 8,
-  marginBottom: 8,
-  borderBottom: '1px solid #3f3f46',
-};
 
 const sectionStyle: React.CSSProperties = {
   marginBottom: 10,
