@@ -58,8 +58,7 @@ export function LightingPanel() {
         <DraggablePanel
           id="lighting-panel"
           title="☀ 조명·렌더"
-          defaultSide="right"
-          defaultTop={80}
+          defaultY={80}
           width={300}
           accent="#fbbf24"
           right={
@@ -203,6 +202,7 @@ export function LightingPanel() {
           <CustomLightSection />
 
           <Section title="PostFX">
+            <Checkbox label="안티알리아싱 (SMAA)" checked={s.smaaEnabled} onChange={s.setSmaaEnabled} />
             <Checkbox label="Bloom (밝은 영역 글로우)" checked={s.bloomEnabled} onChange={s.setBloomEnabled} />
             {s.bloomEnabled && (
               <Slider label="Bloom 강도" min={0} max={2} step={0.05} value={s.bloomIntensity} onChange={s.setBloomIntensity} />

@@ -19,8 +19,7 @@ export function BuiltinLightInspector() {
     <DraggablePanel
       id="builtin-light-inspector"
       title={title}
-      defaultSide="right"
-      defaultTop={80}
+      defaultY={80}
       width={280}
       accent="#fbbf24"
       right={
@@ -70,6 +69,19 @@ function SunInspector() {
       </Section>
       <Section title="그림자">
         <CheckboxField label="그림자 캐스팅" checked={s.castShadow} onChange={s.setCastShadow} />
+        <label style={rowStyle}>
+          <span style={lblStyle}>품질</span>
+          <select
+            value={s.shadowQuality}
+            onChange={(e) => s.setShadowQuality(e.target.value as typeof s.shadowQuality)}
+            style={{ flex: 1, background: '#27272a', color: '#e5e5e5', border: '1px solid #3f3f46', borderRadius: 3, padding: '2px 4px', fontSize: 11 }}
+          >
+            <option value="low">low (1024)</option>
+            <option value="medium">medium (2048)</option>
+            <option value="high">high (4096)</option>
+            <option value="ultra">ultra (8192)</option>
+          </select>
+        </label>
         <NumberField label="소프트니스" value={s.shadowSoftness} min={0} max={30} step={1} onChange={s.setShadowSoftness} />
         <NumberField label="그림자 강도" value={s.shadowStrength} min={0} max={1.2} step={0.05} onChange={s.setShadowStrength} />
         <ColorField label="그림자 색" value={s.shadowColor} onChange={s.setShadowColor} />

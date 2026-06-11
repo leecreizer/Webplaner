@@ -36,8 +36,7 @@ export function LightInspector() {
     <DraggablePanel
       id="light-inspector"
       title={kindLabel(light.kind)}
-      defaultSide="right"
-      defaultTop={80}
+      defaultY={80}
       width={280}
       accent="#fbbf24"
       right={
@@ -47,7 +46,7 @@ export function LightInspector() {
             onChange={(e) => set({ name: e.target.value })}
             style={nameInputStyle}
           />
-          <button onClick={() => { remove(light.id); select(null); }} title="삭제" style={delBtnStyle}>
+          <button onClick={() => select(null)} title="닫기 (라이트 유지)" style={delBtnStyle}>
             ✕
           </button>
         </>
@@ -170,6 +169,17 @@ export function LightInspector() {
           <Vec3Field label="position" value={light.position} onChange={(i, v) => setPos(i, v)} />
         </Section>
       )}
+
+      <button
+        onClick={() => { remove(light.id); select(null); }}
+        style={{
+          width: '100%', padding: '6px 10px', background: '#7f1d1d', color: '#fff',
+          border: 'none', borderRadius: 3, cursor: 'pointer', fontSize: 11, fontWeight: 600,
+        }}
+        title="라이트 삭제"
+      >
+        🗑 라이트 삭제
+      </button>
     </DraggablePanel>
   );
 }

@@ -106,6 +106,10 @@ export interface LightingState {
   /** 노출(exposure). 1.0 = 기본. ACES와 함께 조정. */
   toneMappingExposure: number;
 
+  // ===== 안티알리아싱 ========================================
+  /** SMAA 안티알리아싱 (계단 현상 완화). Canvas MSAA(antialias:true)에 더해 엣지 부드럽게. */
+  smaaEnabled: boolean;
+
   // ===== 포스트프로세싱 =======================================
   /** 밝은 부분이 빛 번지듯 빛나는 효과. */
   bloomEnabled: boolean;
@@ -149,6 +153,7 @@ export interface LightingState {
   setAmbientIntensity: (v: number) => void;
   setCastShadow: (v: boolean) => void;
   setShadowQuality: (v: ShadowQuality) => void;
+  setSmaaEnabled: (v: boolean) => void;
   setShadowSoftness: (v: number) => void;
   setShadowStrength: (v: number) => void;
   setShadowBias: (v: number) => void;
@@ -231,6 +236,7 @@ const DEFAULTS = {
 
   castShadow: true,
   shadowQuality: 'high' as ShadowQuality,
+  smaaEnabled: true,
   // 12 = 약 9cm penumbra (mapSize 4096 기준). 6 은 너무 하드해 면도날 그림자.
   shadowSoftness: 12,
   // 폐쇄 공간 어둠 강화 — effectiveAmbient = ambientIntensity * (1 - 0.85*0.7) ≈ 0.06
@@ -319,6 +325,7 @@ export const useLightingStore = create<LightingState>((set) => ({
   setAmbientIntensity: (v) => set({ ambientIntensity: v }),
   setCastShadow: (v) => set({ castShadow: v }),
   setShadowQuality: (v) => set({ shadowQuality: v }),
+  setSmaaEnabled: (v) => set({ smaaEnabled: v }),
   setShadowSoftness: (v) => set({ shadowSoftness: v }),
   setShadowStrength: (v) => set({ shadowStrength: v }),
   setShadowBias: (v) => set({ shadowBias: v }),

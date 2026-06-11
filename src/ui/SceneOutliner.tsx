@@ -54,7 +54,7 @@ export function SceneOutliner() {
   ];
 
   return (
-    <DraggablePanel id="outliner" title="🌳 씬 트리" defaultSide="left" defaultTop={80} width={240} accent="#a3e635">
+    <DraggablePanel id="outliner" title="🌳 씬 트리" defaultX={16} defaultY={80} width={240} accent="#a3e635">
       <Section title={`벽 (${walls.length})`}>
         {walls.length === 0 && <Empty />}
         {walls.map((w) => {

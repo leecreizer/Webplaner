@@ -1,81 +1,92 @@
 import { create } from 'zustand';
 
-/** 패널이 붙는 화면 변. */
-export type PanelSide = 'left' | 'right';
-
-export interface PanelPos {
-  side: PanelSide;
-  /** 변 기준 세로 위치 (px, top). */
-  top: number;
+/** 패널 자유 좌표 (px, fixed left/top). */
+export interface PanelXY {
+  x: number;
+  y: number;
 }
 
 /**
- * 떠다니는 패널들의 위치 관리.
+ * 떠다니는 패널 위치 관리 — 자유 좌표 + 자석 스냅.
  *
- * - 각 패널은 좌/우 변 중 하나에 스냅되고 세로 top 으로 쌓인다.
- * - 드래그 종료 시 중심 x 로 좌/우 판정 후 같은 변의 다른 패널과 겹치지 않게 reflow.
- * - 위치는 세션 동안 유지 (새 패널은 default 로 등록).
+ * - 패널은 화면 어디든 자유 배치 (드래그하는 대로).
+ * - 드롭 시: 브라우저 좌/우 *끝에 닿으면* 엣지 스냅, 다른 패널 가장자리에 *가까우면* 옆에 붙음.
  */
 export interface PanelStoreState {
-  pos: Record<string, PanelPos>;
-  /** 측정된 패널 높이 (reflow 계산용). */
-  heights: Record<string, number>;
-  /** 패널 위치 등록/갱신. */
-  setPos: (id: string, pos: PanelPos) => void;
-  /** 높이 보고. */
-  reportHeight: (id: string, h: number) => void;
-  /** 기본 위치 (없을 때만). */
-  ensureDefault: (id: string, def: PanelPos) => void;
+  pos: Record<string, PanelXY>;
+  setPos: (id: string, xy: PanelXY) => void;
+  ensureDefault: (id: string, xy: PanelXY) => void;
 }
 
 export const usePanelStore = create<PanelStoreState>((set) => ({
   pos: {},
-  heights: {},
-  setPos: (id, pos) => set((s) => ({ pos: { ...s.pos, [id]: pos } })),
-  reportHeight: (id, h) =>
-    set((s) => (s.heights[id] === h ? s : { heights: { ...s.heights, [id]: h } })),
-  ensureDefault: (id, def) =>
-    set((s) => (s.pos[id] ? s : { pos: { ...s.pos, [id]: def } })),
+  setPos: (id, xy) => set((s) => ({ pos: { ...s.pos, [id]: xy } })),
+  ensureDefault: (id, xy) => set((s) => (s.pos[id] ? s : { pos: { ...s.pos, [id]: xy } })),
 }));
 
-const GAP = 8;
-const TOP_MARGIN = 72; // 툴바 아래
+const EDGE = 28; // 브라우저 끝 스냅 임계 (이 안쪽으로 들어오면 끝에 붙음)
+const SNAP = 18; // 패널끼리 자석 스냅 임계
+const GAP = 6; // 붙을 때 간격
+const MARGIN = 8; // 엣지 스냅 시 여백
+const TOP_MIN = 64; // 툴바 아래
+
+export interface PanelRect {
+  left: number;
+  top: number;
+  right: number;
+  bottom: number;
+}
 
 /**
- * 같은 변의 패널들을 top 순으로 정렬 후, dragged 패널을 dropTop 근처에 두되 겹치면 아래로 밀어
- * 쌓는다. dragged 외 패널들은 위치 유지(움직이지 않음) — dragged 만 빈 자리에 스냅.
+ * 드롭 위치 (x,y) + 크기 (w,h) + 다른 패널 rect 들로 자석 스냅된 최종 좌표 계산.
+ *
+ * 1. 브라우저 좌/우 끝 *접촉* 시 엣지 스냅
+ * 2. 다른 패널 가장자리(좌↔우 / 상단정렬 / 하단스택)에 *근접* 시 옆에/아래에 붙임
+ * 3. 화면 밖으로 안 나가게 clamp
  */
-export function resolveStack(
-  pos: Record<string, PanelPos>,
-  heights: Record<string, number>,
-  draggedId: string,
-  side: PanelSide,
-  dropTop: number,
-): number {
-  // 같은 변의 *다른* 패널들의 [top, bottom] 구간
-  const others = Object.entries(pos)
-    .filter(([id, p]) => id !== draggedId && p.side === side)
-    .map(([id, p]) => ({ top: p.top, bottom: p.top + (heights[id] ?? 100) }))
-    .sort((a, b) => a.top - b.top);
+export function snapPanel(
+  x: number,
+  y: number,
+  w: number,
+  h: number,
+  others: PanelRect[],
+): PanelXY {
+  const W = window.innerWidth;
+  const H = window.innerHeight;
+  let nx = x;
+  let ny = y;
 
-  const h = heights[draggedId] ?? 100;
-  let top = Math.max(TOP_MARGIN, dropTop);
+  // 1) 브라우저 좌/우 끝 접촉 스냅
+  if (x <= EDGE) nx = MARGIN;
+  else if (x + w >= W - EDGE) nx = W - w - MARGIN;
 
-  // 겹치는 구간이 있으면 그 아래로 이동, 반복 (아래 패널들과도 안 겹칠 때까지)
-  let moved = true;
-  let guard = 0;
-  while (moved && guard < 20) {
-    moved = false;
-    guard++;
-    for (const o of others) {
-      if (top < o.bottom && top + h > o.top) {
-        top = o.bottom + GAP;
-        moved = true;
-      }
+  // 2) 패널끼리 자석 스냅 — 세로 구간이 겹칠 때만 좌우 가장자리 매칭
+  for (const o of others) {
+    const vOverlap = ny < o.bottom && ny + h > o.top;
+    const hOverlap = nx < o.right && nx + w > o.left;
+    // 내 왼쪽 ~ 상대 오른쪽 → 상대 오른편에 붙임 + 상단 정렬
+    if (vOverlap && Math.abs(nx - o.right) < SNAP) {
+      nx = o.right + GAP;
+      ny = o.top;
+    }
+    // 내 오른쪽 ~ 상대 왼쪽 → 상대 왼편에 붙임 + 상단 정렬
+    else if (vOverlap && Math.abs(nx + w - o.left) < SNAP) {
+      nx = o.left - w - GAP;
+      ny = o.top;
+    }
+    // 내 위 ~ 상대 아래 → 상대 아래에 스택 + 좌측 정렬
+    if (hOverlap && Math.abs(ny - o.bottom) < SNAP) {
+      ny = o.bottom + GAP;
+      nx = o.left;
+    }
+    // 상단 정렬 스냅
+    else if (Math.abs(ny - o.top) < SNAP && (vOverlap || hOverlap)) {
+      ny = o.top;
     }
   }
-  // 화면 아래로 너무 내려가면 위로 (최소 TOP_MARGIN)
-  const maxTop = Math.max(TOP_MARGIN, window.innerHeight - h - 16);
-  if (top > maxTop) top = maxTop;
-  return top;
+
+  // 3) clamp
+  nx = Math.max(0, Math.min(nx, W - w));
+  ny = Math.max(TOP_MIN, Math.min(ny, H - 40));
+  return { x: nx, y: ny };
 }

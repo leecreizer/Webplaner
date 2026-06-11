@@ -46,8 +46,7 @@ export function ModelInspector() {
     <DraggablePanel
       id="model-inspector"
       title="📦 모델"
-      defaultSide="right"
-      defaultTop={80}
+      defaultY={80}
       width={280}
       accent="#22d3ee"
       right={
@@ -57,7 +56,8 @@ export function ModelInspector() {
             onChange={(e) => update(model.id, { name: e.target.value })}
             style={nameInputStyle}
           />
-          <button onClick={() => { remove(model.id); select(null); }} title="삭제" style={delBtnStyle}>
+          {/* ✕ = 패널 닫기(선택 해제). 모델은 지우지 않음 — 삭제는 아래 🗑 버튼. */}
+          <button onClick={() => select(null)} title="닫기 (모델 유지)" style={closeBtnStyle}>
             ✕
           </button>
         </>
@@ -126,6 +126,13 @@ export function ModelInspector() {
           ⊥ 바닥 정렬
         </button>
       </div>
+      <button
+        onClick={() => { remove(model.id); select(null); }}
+        style={{ ...resetBtnStyle, width: '100%', marginTop: 6, background: '#7f1d1d', color: '#fff' }}
+        title="모델 삭제"
+      >
+        🗑 모델 삭제
+      </button>
     </DraggablePanel>
   );
 }
@@ -309,13 +316,13 @@ const nameInputStyle: React.CSSProperties = {
   fontWeight: 600,
 };
 
-const delBtnStyle: React.CSSProperties = {
+const closeBtnStyle: React.CSSProperties = {
   width: 22,
   height: 22,
   padding: 0,
-  background: '#7f1d1d',
-  color: '#fff',
-  border: 'none',
+  background: 'transparent',
+  color: '#a1a1aa',
+  border: '1px solid #3f3f46',
   borderRadius: 3,
   cursor: 'pointer',
   fontSize: 12,

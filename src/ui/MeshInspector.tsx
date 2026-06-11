@@ -26,8 +26,7 @@ export function MeshInspector() {
     <DraggablePanel
       id="mesh-inspector"
       title={`${kindLabel(kind)} #${ownerId}`}
-      defaultSide="right"
-      defaultTop={400}
+      defaultY={400}
       width={300}
       accent="#fbbf24"
       right={

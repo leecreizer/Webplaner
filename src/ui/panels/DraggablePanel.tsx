@@ -1,26 +1,23 @@
-import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 'react';
-import { usePanelStore, resolveStack, type PanelSide } from './panelStore';
+import { useEffect, useRef, useState, type ReactNode } from 'react';
+import { usePanelStore, snapPanel, type PanelRect } from './panelStore';
 
 /**
- * 드래그 이동 + 좌/우 엣지 스냅 + 같은 변 패널 겹침 방지(reflow) 떠다니는 패널 컨테이너.
+ * 자유 이동 + 자석 스냅 떠다니는 패널.
  *
- * - 제목 바를 드래그하면 자유 이동, 놓으면 중심 x 로 좌/우 변에 스냅되고 같은 변의 다른 패널과
- *   겹치지 않게 세로로 쌓인다.
- * - 위치는 panelStore 에 저장 (세션 유지). width 고정.
+ * - 제목 바(⠿)를 드래그하면 자유 이동.
+ * - 놓으면: 브라우저 좌/우 *끝에 닿으면* 엣지 스냅, 다른 패널 가장자리에 *가까우면* 옆/아래에
+ *   자석처럼 붙음 (snapPanel).
+ * - 위치는 panelStore 에 {x,y} 로 세션 유지.
  *
  * @param id 고유 id (위치 저장 키)
- * @param title 제목 바 텍스트
- * @param defaultSide 초기 변
- * @param defaultTop 초기 세로 위치
- * @param width 패널 너비(px)
- * @param accent 제목 바 강조색
- * @param right 제목 바 우측 슬롯 (닫기/접기 버튼 등)
+ * @param defaultX/defaultY 초기 좌표 (없을 때만)
+ * @param right 제목 바 우측 슬롯 (닫기/삭제 버튼 등)
  */
 export function DraggablePanel({
   id,
   title,
-  defaultSide = 'right',
-  defaultTop = 80,
+  defaultX,
+  defaultY = 80,
   width = 280,
   accent = '#fbbf24',
   right,
@@ -28,8 +25,8 @@ export function DraggablePanel({
 }: {
   id: string;
   title: ReactNode;
-  defaultSide?: PanelSide;
-  defaultTop?: number;
+  defaultX?: number;
+  defaultY?: number;
   width?: number;
   accent?: string;
   right?: ReactNode;
@@ -37,29 +34,18 @@ export function DraggablePanel({
 }) {
   const pos = usePanelStore((s) => s.pos[id]);
   const setPos = usePanelStore((s) => s.setPos);
-  const reportHeight = usePanelStore((s) => s.reportHeight);
   const ensureDefault = usePanelStore((s) => s.ensureDefault);
   const ref = useRef<HTMLDivElement>(null);
 
-  // 기본 위치 1회 등록
+  // 기본 위치 1회 등록 — defaultX 없으면 우측 정렬
   useEffect(() => {
-    ensureDefault(id, { side: defaultSide, top: defaultTop });
-  }, [id, defaultSide, defaultTop, ensureDefault]);
+    const dx = defaultX ?? window.innerWidth - width - 16;
+    ensureDefault(id, { x: dx, y: defaultY });
+  }, [id, defaultX, defaultY, width, ensureDefault]);
 
-  // 높이 측정 보고 (reflow 계산용)
-  useLayoutEffect(() => {
-    const el = ref.current;
-    if (!el) return;
-    const ro = new ResizeObserver(() => reportHeight(id, el.offsetHeight));
-    ro.observe(el);
-    reportHeight(id, el.offsetHeight);
-    return () => ro.disconnect();
-  }, [id, reportHeight]);
+  const x = pos?.x ?? (defaultX ?? 16);
+  const y = pos?.y ?? defaultY;
 
-  const side: PanelSide = pos?.side ?? defaultSide;
-  const top = pos?.top ?? defaultTop;
-
-  // 드래그 중 자유 좌표 (px). null 이면 스냅된 위치 사용.
   const [drag, setDrag] = useState<{ x: number; y: number } | null>(null);
 
   const onPointerDown = (e: React.PointerEvent) => {
@@ -67,9 +53,8 @@ export function DraggablePanel({
     e.preventDefault();
     const startX = e.clientX;
     const startY = e.clientY;
-    // 현재 화면상 좌표 계산
-    const baseX = side === 'left' ? 16 : window.innerWidth - width - 16;
-    const baseY = top;
+    const baseX = x;
+    const baseY = y;
     let curX = baseX;
     let curY = baseY;
 
@@ -81,29 +66,32 @@ export function DraggablePanel({
     const onUp = () => {
       window.removeEventListener('pointermove', onMove);
       window.removeEventListener('pointerup', onUp);
-      // 중심 x 로 좌/우 판정
-      const centerX = curX + width / 2;
-      const newSide: PanelSide = centerX < window.innerWidth / 2 ? 'left' : 'right';
-      const { pos: allPos, heights } = usePanelStore.getState();
-      const resolvedTop = resolveStack(allPos, heights, id, newSide, curY);
-      setPos(id, { side: newSide, top: resolvedTop });
+      const w = ref.current?.offsetWidth ?? width;
+      const h = ref.current?.offsetHeight ?? 200;
+      // 다른 패널 rect 수집 (자기 제외)
+      const others: PanelRect[] = [];
+      document.querySelectorAll<HTMLElement>('[data-panel-id]').forEach((el) => {
+        if (el.dataset.panelId === id) return;
+        const r = el.getBoundingClientRect();
+        others.push({ left: r.left, top: r.top, right: r.right, bottom: r.bottom });
+      });
+      setPos(id, snapPanel(curX, curY, w, h, others));
       setDrag(null);
     };
     window.addEventListener('pointermove', onMove);
     window.addEventListener('pointerup', onUp);
   };
 
-  const left = drag ? drag.x : side === 'left' ? 16 : undefined;
-  const rightCss = drag ? undefined : side === 'right' ? 16 : undefined;
-  const topCss = drag ? drag.y : top;
+  const left = drag ? drag.x : x;
+  const topCss = drag ? drag.y : y;
 
   return (
     <div
       ref={ref}
+      data-panel-id={id}
       style={{
         position: 'fixed',
         left,
-        right: rightCss,
         top: topCss,
         width,
         maxHeight: 'calc(100vh - 90px)',
@@ -119,7 +107,6 @@ export function DraggablePanel({
         userSelect: drag ? 'none' : undefined,
       }}
     >
-      {/* 드래그 핸들 = 제목 바 */}
       <div
         onPointerDown={onPointerDown}
         style={{

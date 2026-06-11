@@ -7,6 +7,7 @@ import {
   DepthOfField,
   ToneMapping,
   SSAO,
+  SMAA,
 } from '@react-three/postprocessing';
 import {
   BlendFunction,
@@ -42,9 +43,10 @@ export function PostFX() {
   const dofFocusDistance = useLightingStore((s) => s.dofFocusDistance);
   const dofBokehScale = useLightingStore((s) => s.dofBokehScale);
   const toneMapping = useLightingStore((s) => s.toneMapping);
+  const smaaEnabled = useLightingStore((s) => s.smaaEnabled);
 
   const anyEnabled =
-    bloomEnabled || ssaoEnabled || gtaoEnabled || vignetteEnabled || dofEnabled || toneMapping !== 'none';
+    bloomEnabled || ssaoEnabled || gtaoEnabled || vignetteEnabled || dofEnabled || smaaEnabled || toneMapping !== 'none';
 
   const composerRef = useRef<PPEffectComposer | null>(null);
 
@@ -122,6 +124,8 @@ export function PostFX() {
       )}
 
       {toneMapping !== 'none' ? <ToneMapping mode={mapToneMappingMode(toneMapping)} /> : <></>}
+      {/* SMAA — 마지막 단계에서 엣지 안티알리아싱 (계단 현상 완화) */}
+      {smaaEnabled ? <SMAA /> : <></>}
     </EffectComposer>
   );
 }
