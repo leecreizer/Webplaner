@@ -22,7 +22,7 @@ const _csgEval = new Evaluator();
 export function FloorView({
   space,
   thickness = 0,
-  color = '#e0d6c4',
+  color = '#ffffff',
 }: {
   space: Space;
   thickness?: number;

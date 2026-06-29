@@ -58,25 +58,24 @@ export function PostFX() {
           skip 방지. radius/intensity 만 store 에 매핑, 나머지는 라이브러리 디폴트. */}
       {gtaoEnabled ? (
         <SSAO
-          // 슬라이더 reactive — key 로 강제 remount
-          key={`ssao-${gtaoIntensity}-${gtaoRadius}-${gtaoDistanceFalloff}-${gtaoThickness}-${gtaoScale}`}
+          key={`ssao-${gtaoIntensity}-${gtaoRadius}-${gtaoDistanceFalloff}-${gtaoThickness}`}
           blendFunction={BlendFunction.MULTIPLY}
           samples={32}
           rings={7}
-          // ↓ 검정 plate 방지 — radius 최소 0.5m 보장 (너무 작으면 모든 픽셀 occluded 처리)
-          radius={Math.max(0.5, gtaoRadius * 2)}
-          intensity={Math.max(0.1, gtaoIntensity)}
-          luminanceInfluence={0.6}
-          distanceScaling={true}
-          bias={0.05}
-          // worldDistance — 카메라에서 멀어지면 SSAO fade. 인테리어는 ~20m, 작게 두면 그
-          // 거리 너머가 검정 plate 로 덮임. distanceFalloff 슬라이더 = m 단위 fade.
-          worldDistanceThreshold={Math.max(20, gtaoDistanceFalloff * 30)}
-          worldDistanceFalloff={Math.max(5, gtaoDistanceFalloff * 5)}
-          // worldProximity — depth gap 임계. 너무 작으면 wall ↔ floor 같이 *얇은 gap* 도
-          // occlusion 으로 인식돼 검정. thickness 슬라이더 = m 단위.
-          worldProximityThreshold={Math.max(0.5, gtaoThickness)}
-          worldProximityFalloff={Math.max(0.25, gtaoThickness * 0.5)}
+          // distanceScaling=false → 고정 world 반경 (true면 먼 배경에서 반경 폭증 → 화면 전체
+          // 어두운 판). radius 는 world 단위 AO 반경.
+          distanceScaling={false}
+          radius={Math.max(0.2, gtaoRadius)}
+          // intensity — distanceScaling off 면 약해지므로 ×4 부스트
+          intensity={Math.max(0.5, gtaoIntensity * 4)}
+          luminanceInfluence={0.5}
+          bias={0.03}
+          // ★핵심: worldDistanceThreshold 는 *이 거리 너머는 AO 제외*. 작게(=인테리어 범위)
+          // 둬야 배경/먼 영역이 어두운 판으로 안 덮인다. 이전 300m → 배경까지 AO 적용돼 검정.
+          worldDistanceThreshold={12 + gtaoDistanceFalloff}
+          worldDistanceFalloff={6}
+          worldProximityThreshold={6}
+          worldProximityFalloff={3}
         />
       ) : (
         <></>

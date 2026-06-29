@@ -20,6 +20,30 @@ import { buildSpaces } from '@/domain/layout/SpaceBuilder';
  *
  * `App.tsx`의 `demo` prop이 true일 때 useEffect에서 1회 호출된다.
  */
+/**
+ * 기본 도형 플랜 — 10m × 10m 정사각형 단일 공간. 설계창 기본 셋팅용.
+ * 이미 노드/벽이 있으면(불러온 플랜 등) 건너뛴다.
+ */
+export function seedDefaultPlan(size = 10): void {
+  if (useLayoutStore.getState().nodes.length > 0) return;
+  const h = size / 2;
+  const A = Node.create(new Vector3(-h, 0, -h), layoutRegistry);
+  const B = Node.create(new Vector3(h, 0, -h), layoutRegistry);
+  const C = Node.create(new Vector3(h, 0, h), layoutRegistry);
+  const D = Node.create(new Vector3(-h, 0, h), layoutRegistry);
+  Wall.create(A, B, layoutRegistry);
+  Wall.create(B, C, layoutRegistry);
+  Wall.create(C, D, layoutRegistry);
+  Wall.create(D, A, layoutRegistry);
+  buildSpaces(useLayoutStore.getState().walls, layoutRegistry);
+  for (const space of useLayoutStore.getState().spaces) {
+    space.invalidateCornerPoints();
+    void space.cornerPoints;
+    space.updateCenter();
+    space.updateArea();
+  }
+}
+
 export function seedSampleRooms(): void {
   // 기존 도메인 상태 초기화
   useLayoutStore.getState().reset();

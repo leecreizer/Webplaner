@@ -1,7 +1,8 @@
-import { Suspense } from 'react';
-import { Vector3 } from 'three';
+import { Suspense, useMemo } from 'react';
+import { Mesh, Object3D, Vector3 } from 'three';
 import { useGLTF } from '@react-three/drei';
 import type { ProductInfo } from '@/domain/products/ProductInfo';
+import { HelperScaler, isHelperRegionName } from '@/domain/products/HelperScaler';
 import { mmToM } from '@/lib/math/Math';
 
 /**
@@ -22,12 +23,19 @@ export function ProductView({ product }: { product: ProductInfo }) {
   const cm = product.contentsMaster;
   if (!cm || !cm.assetURL) return null;
 
+  // 목표 치수(m) — product.size가 설정돼 있으면 그것, 아니면 카탈로그 규격(mm→m).
+  const target =
+    product.size.lengthSq() > 0
+      ? product.size
+      : contentsMasterSizeInM(cm);
+
   return (
     <Suspense fallback={null}>
       <ProductGLTF
         url={cm.assetURL}
         position={product.position}
         rotationEulerDeg={product.rotationEuler}
+        target={target}
       />
     </Suspense>
   );
@@ -41,10 +49,12 @@ function ProductGLTF({
   url,
   position,
   rotationEulerDeg,
+  target,
 }: {
   url: string;
   position: Vector3;
   rotationEulerDeg: Vector3;
+  target: Vector3;
 }) {
   const { scene } = useGLTF(url);
   const rotRad: [number, number, number] = [
@@ -52,13 +62,65 @@ function ProductGLTF({
     (rotationEulerDeg.y * Math.PI) / 180,
     (rotationEulerDeg.z * Math.PI) / 180,
   ];
+
+  // 인스턴스별 씬 클론 + helper 영역 스트레치. useGLTF는 geometry를 캐시·공유하므로
+  // 변형 대상 메시의 geometry를 deep clone한 뒤 변형해야 다른 인스턴스에 영향이 없다.
+  const instance = useMemo(
+    () => prepareProductInstance(scene, target),
+    [scene, target.x, target.y, target.z],
+  );
+
   return (
     <primitive
-      object={scene.clone()}
+      object={instance}
       position={[position.x, position.y, position.z]}
       rotation={rotRad}
     />
   );
+}
+
+/**
+ * GLB 씬을 인스턴스용으로 복제하고, helper 영역 기반으로 목표 치수에 맞춰 메시를 변형한다.
+ * helper/hotspot/replaceable* 보조 노드는 렌더에서 숨긴다.
+ */
+function prepareProductInstance(scene: Object3D, target: Vector3): Object3D {
+  const clone = scene.clone(true);
+
+  // useGLTF 공유 geometry 보호 — 변형 대상 메시 geometry를 인스턴스 전용으로 복제.
+  clone.traverse((obj) => {
+    if (obj instanceof Mesh) obj.geometry = obj.geometry.clone();
+  });
+
+  const scaler = HelperScaler.build(clone);
+
+  // 진단 계측 — window.__HELPER_DEBUG__ = true 일 때 캡처 결과 로깅 + helper 박스 표시 유지.
+  const debug =
+    typeof window !== 'undefined' &&
+    (window as unknown as { __HELPER_DEBUG__?: boolean }).__HELPER_DEBUG__;
+  if (debug) {
+    // eslint-disable-next-line no-console
+    console.log('[HelperScaler] target=', target.toArray(), scaler.getDiagnostics());
+    const meshNames: string[] = [];
+    clone.traverse((o) => {
+      if (o instanceof Mesh) meshNames.push(o.name || '(unnamed)');
+    });
+    // eslint-disable-next-line no-console
+    console.log('[HelperScaler] meshes=', meshNames);
+  }
+
+  scaler.applyResize(target);
+
+  // 보조 노드 렌더 숨김. helper 영역 메시(L/R/T/B/F/K)와 helper/hotspot/replaceable* 그룹 숨김.
+  // debug 시에는 helper 영역 메시를 보이게 유지해 어느 범위를 덮는지 눈으로 확인.
+  clone.traverse((obj) => {
+    const n = obj.name.toLowerCase();
+    const isRegion = isHelperRegionName(obj.name);
+    const isAux = n === 'helper' || n === 'hotspot' || n.startsWith('replaceable');
+    if (isRegion) obj.visible = !!debug;
+    else if (isAux) obj.visible = false;
+  });
+
+  return clone;
 }
 
 /**

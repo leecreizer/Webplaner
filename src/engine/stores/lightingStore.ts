@@ -277,12 +277,12 @@ const DEFAULTS = {
 
   // N8AO — 모서리/구석 darken. 디폴트 OFF — 강한 intensity 가 화면 검정 plate 처럼 보일 수
   // 있어 사용자가 명시적으로 켜는 게 안전. ssao panel 에서 토글 + 강도 조절.
+  // NBAO(N8AO) — 켜면 캔버스가 검게 렌더되는 PostFX 통합 버그가 있어 기본 OFF로 둠.
   ssaoEnabled: false,
   ssaoIntensity: 1.5,
   aoRadius: 0.8,
   aoDistanceFalloff: 0.3,
 
-  // GTAO default off — 사용자가 명시적으로 토글. N8AO와 별개로 동작.
   gtaoEnabled: false,
   // 인테리어 스케일 m 단위 자연 매핑 (panel slider 와 1:1)
   gtaoIntensity: 1.0,

@@ -276,7 +276,7 @@ function buildPrimitiveGeometry(kind: PrimitiveKind): BufferGeometry {
 function buildPrimitiveGroup(kind: PrimitiveKind): Object3D {
   const geo = buildPrimitiveGeometry(kind);
   const mat = new MeshStandardMaterial({
-    color: '#bfc4cc',
+    color: kind === 'plane' ? '#ffffff' : '#bfc4cc',
     roughness: 0.55,
     metalness: 0.0,
     side: kind === 'plane' ? DoubleSide : undefined,

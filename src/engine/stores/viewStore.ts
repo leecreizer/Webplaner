@@ -55,7 +55,7 @@ export const useViewStore = create<ViewState>((set) => ({
   gridSectionColor: '#888888',
   gridOpacity: 1.0,
 
-  sceneBackgroundColor: '#1a1a1a',
+  sceneBackgroundColor: '#ffffff',
 
   setViewMode: (v) => set({ viewMode: v }),
   setWallThickPreview: (v) => set({ wallThickPreview: v }),

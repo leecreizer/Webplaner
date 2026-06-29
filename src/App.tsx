@@ -37,6 +37,9 @@ import { BuiltinLightInspector } from './ui/BuiltinLightInspector';
 import { ModelInspector } from './ui/ModelInspector';
 import { HostProvider } from './host/HostContext';
 import type { HostEventHandlers } from './host/HostEvents';
+import { useImportedModelStore } from '@/features/models/importedModelStore';
+import { ProductPlacement } from '@/features/placement/ProductPlacement';
+import { usePlacedProductStore } from '@/features/placement/placedProductStore';
 
 /**
  * HomePlanner3 루트 컴포넌트.
@@ -66,6 +69,15 @@ export default function App({
   showToolbar = true,
   showLightingPanel = true,
 }: AppProps = {}) {
+  // 기본 셋팅: 크기 10 흰색 평면(plane)을 1회 배치 (벽/공간 생성 없음)
+  useEffect(() => {
+    const st = useImportedModelStore.getState();
+    if (st.models.length === 0) {
+      const id = st.addPrimitive('plane');
+      st.update(id, { scale: 10, position: [0, 0, 0] });
+      st.select(null);
+    }
+  }, []);
   return (
     <HostProvider handlers={handlers}>
       <div style={{ position: 'relative', width: '100%', height: '100%' }}>
@@ -77,6 +89,13 @@ export default function App({
         {showLightingPanel && <BuiltinLightInspector />}
         {showLightingPanel && <ModelInspector />}
         <Canvas
+          // 빈 곳 클릭(씬 오브젝트 미적중) → 배치 상품 선택 해제. 기즈모 클릭은 이벤트를
+          // TransformControls가 가로채므로 여기로 오지 않음.
+          onPointerMissed={(e) => {
+            if ((e as MouseEvent).button !== 0) return;
+            const st = usePlacedProductStore.getState();
+            if (st.selectedIds.length > 0) { st.select(null); window.parent?.postMessage({ type: 'hp3:deselected' }, '*'); }
+          }}
           shadows={{ type: PCFShadowMap }}
           // 디스플레이 해상도(devicePixelRatio)에 맞춰 렌더 — 고DPI 화면에서 선명. r3f Canvas 는
           // 부모 div(100%×100%) 크기에 ResizeObserver 로 자동 추종.
@@ -99,6 +118,7 @@ export default function App({
 
           <PlanScene showCeiling={showCeiling} showProducts={showProducts} />
           <ImportedModels />
+          <ProductPlacement />
           <SpaceLightmap />
           <SceneLightProbe />
           <IrradianceProbeGrid />

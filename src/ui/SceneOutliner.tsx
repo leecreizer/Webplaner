@@ -5,6 +5,7 @@ import { useMeshSelectionStore, meshKey } from '@/features/selection/meshSelecti
 import { useSelectionStore } from '@/features/selection/selectionStore';
 import { useVisibilityStore } from '@/features/scene/visibilityStore';
 import { useImportedModelStore } from '@/features/models/importedModelStore';
+import { usePlacedProductStore } from '@/features/placement/placedProductStore';
 import { DraggablePanel } from '@/ui/panels/DraggablePanel';
 import { Wall } from '@/domain/structures/Wall';
 import { Space } from '@/domain/structures/Space';
@@ -39,6 +40,12 @@ export function SceneOutliner() {
   const selectModel = useImportedModelStore((s) => s.select);
   const removeModel = useImportedModelStore((s) => s.remove);
   const updateModel = useImportedModelStore((s) => s.update);
+
+  // 배치된 상품
+  const placedProducts = usePlacedProductStore((s) => s.placed);
+  const selectedPlacedId = usePlacedProductStore((s) => s.selectedId);
+  const selectPlaced = usePlacedProductStore((s) => s.select);
+  const removePlaced = usePlacedProductStore((s) => s.remove);
 
   // 기본 광원
   const selectedBuiltin = useLightingStore((s) => s.selectedBuiltin);
@@ -135,6 +142,21 @@ export function SceneOutliner() {
             />
           );
         })}
+      </Section>
+
+      <Section title={`배치 상품 (${placedProducts.length})`}>
+        {placedProducts.length === 0 && <Empty />}
+        {placedProducts.map((p) => (
+          <Row
+            key={p.id}
+            label={`▣ ${p.name}`}
+            isSelected={selectedPlacedId === p.id}
+            isHidden={false}
+            onSelect={() => selectPlaced(selectedPlacedId === p.id ? null : p.id)}
+            onToggle={() => {}}
+            onDelete={() => removePlaced(p.id)}
+          />
+        ))}
       </Section>
 
       <Section title={`불러온 모델 (${importedModels.length})`}>
