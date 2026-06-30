@@ -118,6 +118,14 @@ function FittedModel({ url, p, sel, ghost = false }: { url: string; p: PlacedPro
       drawers.push({ node: o, baseZ: o.position.z, offset: 1.5 * (depth || 0.3), y: cy });
     });
     drawers.sort((a, b) => a.y - b.y); // 아래부터 1번
+
+    // 도어 피봇(힌지) 방향 자동 감지 — 모델 원점(피봇) 기준 패널이 +x로 뻗으면(center.x>0) 피봇=왼쪽 → 자연 L,
+    // -x로 뻗으면 피봇=오른쪽 → 자연 R. 슬롯 면(slotPos)이 자연 면과 다르면 미러(X축 반전)로 반대쪽 피봇 생성.
+    const isDoorItem = !!p.slotPos;
+    const naturalSide: 'L' | 'R' = center.x >= 0 ? 'L' : 'R';
+    const mirror = isDoorItem && p.slotPos !== naturalSide;
+    const mx = mirror ? -1 : 1;
+
     if (typeof window !== 'undefined' && (window as unknown as { __HELPER_DEBUG__?: boolean }).__HELPER_DEBUG__) {
       // eslint-disable-next-line no-console
       console.log('[FittedModel] 몸통 size(m)=', size.toArray().map((v) => +v.toFixed(3)),
@@ -129,8 +137,8 @@ function FittedModel({ url, p, sel, ghost = false }: { url: string; p: PlacedPro
       // 이미 정점이 목표 치수로 변형됨 → 스케일 없이 중심/바닥 정렬만.
       return {
         obj: clone,
-        scale: [1, 1, 1] as [number, number, number],
-        pos: [-center.x, (p.lift ?? 0) * M - box.min.y, -center.z] as [number, number, number],
+        scale: [mx, 1, 1] as [number, number, number],
+        pos: [-mx * center.x, (p.lift ?? 0) * M - box.min.y, -center.z] as [number, number, number],
         dpTypes,
         doorSlots,
         // 선택 박스는 실제 몸통 bbox(스트레치 결과)에 맞춘다 — 등록치수(p)와 미세하게 달라도 "딱 맞게".
@@ -146,8 +154,8 @@ function FittedModel({ url, p, sel, ghost = false }: { url: string; p: PlacedPro
     const sz = (p.d * M) / (size.z || 1);
     return {
       obj: clone,
-      scale: [sx, sy, sz] as [number, number, number],
-      pos: [-center.x * sx, (p.lift ?? 0) * M - box.min.y * sy, -center.z * sz] as [number, number, number],
+      scale: [sx * mx, sy, sz] as [number, number, number],
+      pos: [-mx * center.x * sx, (p.lift ?? 0) * M - box.min.y * sy, -center.z * sz] as [number, number, number],
       dpTypes,
       doorSlots,
       selSize: [size.x * sx, size.y * sy, size.z * sz] as [number, number, number],
@@ -298,10 +306,10 @@ function PlacedItem({ p, sel, onDown, doorsOpen, doorOpenDeg }: { p: PlacedProdu
       onPointerDown={(e) => { if (e.button !== 0) return; e.stopPropagation(); onDown(p.id, p.code, p.name, e.nativeEvent.shiftKey); }}
     >
       {isDoor ? (
-        // 힌지 피벗(바깥 변)에서 회전 → 그 안에서 패널을 중앙 위치로 되돌림.
-        // mirror=true(POS='X' 도어의 R쪽)면 X축 반전으로 좌우 대칭(피봇 보정).
+        // 힌지 피벗(바깥 변=슬롯 면)에서 회전 → 그 안에서 패널을 중앙으로 되돌림.
+        // 좌우 미러(피봇 보정)는 FittedModel이 모델 피봇 방향을 감지해 적용한다.
         <group position={[hingeX, 0, 0]} ref={hingeRef}>
-          <group position={[-hingeX, 0, 0]} scale={[p.mirror ? -1 : 1, 1, 1]}>{content}</group>
+          <group position={[-hingeX, 0, 0]}>{content}</group>
         </group>
       ) : content}
     </group>
