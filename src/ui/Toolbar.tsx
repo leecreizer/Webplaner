@@ -6,6 +6,7 @@ import { buildSpaces } from '@/domain/layout/SpaceBuilder';
 import { useCustomLightStore, type LightKind } from '@/engine/stores/customLightStore';
 import { useEditStore } from '@/features/editing/editStore';
 import { useImportedModelStore, type PrimitiveKind } from '@/features/models/importedModelStore';
+import { usePlacedProductStore } from '@/features/placement/placedProductStore';
 
 const LIGHT_OPTIONS: { kind: LightKind; label: string; desc: string }[] = [
   { kind: 'point', label: '포인트 (옴니)', desc: '360° 점 광원' },
@@ -89,6 +90,7 @@ export function Toolbar() {
       <AddPrimitiveDropdown />
       <ImportModelButton />
       <EditModeControls />
+      <DoorControls />
       <button onClick={reset} style={dangerButtonStyle}>
         초기화
       </button>
@@ -171,6 +173,39 @@ function MiniSlider({
         {value.toFixed(step < 0.1 ? 2 : 1)}
         {unit ?? ''}
       </span>
+    </div>
+  );
+}
+
+/**
+ * 도어 컨트롤 — 부착된 도어 열기/닫기 토글 + 열림 각도 조절(슬라이더+숫자).
+ * 힌지(바깥 변) 기준 회전이며 각도 0=닫힘, 양수=앞으로 열림.
+ */
+function DoorControls() {
+  const doorsOpen = usePlacedProductStore((s) => s.doorsOpen);
+  const toggleDoors = usePlacedProductStore((s) => s.toggleDoors);
+  const deg = usePlacedProductStore((s) => s.doorOpenDeg);
+  const setDeg = usePlacedProductStore((s) => s.setDoorOpenDeg);
+  return (
+    <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+      <button
+        onClick={toggleDoors}
+        style={doorsOpen ? activeButtonStyle : buttonStyle}
+        title="부착된 도어 열기/닫기 (단축키 O)"
+      >
+        {doorsOpen ? '🚪 도어 닫기' : '🚪 도어 열기'}
+      </button>
+      <MiniSlider label="도어각도" unit="°" min={-180} max={180} step={5} value={deg} onChange={setDeg} />
+      <input
+        type="number"
+        value={deg}
+        min={-180}
+        max={180}
+        step={5}
+        onChange={(e) => setDeg(parseFloat(e.target.value) || 0)}
+        style={{ width: 52, background: '#1f2430', color: '#e6e6e6', border: '1px solid #3a4150', borderRadius: 4, padding: '2px 4px', fontSize: 12 }}
+        title="도어 열림 각도(도). 음수면 반대 방향."
+      />
     </div>
   );
 }

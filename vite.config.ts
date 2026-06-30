@@ -15,8 +15,16 @@ export default defineConfig({
     },
   },
   server: {
-    port: 5173,
+    port: 5190,
+    host: '0.0.0.0',   // LAN/외부 PC 접속 허용 (admin iframe이 :5190으로 로드)
+    strictPort: true,
+    allowedHosts: true,   // 터널(trycloudflare.com 등) 도메인 허용
+  },
+  preview: {
+    port: 5190,
     host: '0.0.0.0',
+    strictPort: true,
+    allowedHosts: true,
   },
   build: {
     target: 'es2022',
