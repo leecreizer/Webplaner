@@ -5,17 +5,15 @@ import {
   Bloom,
   Vignette,
   DepthOfField,
-  ToneMapping,
   SSAO,
   SMAA,
 } from '@react-three/postprocessing';
 import {
   BlendFunction,
-  ToneMappingMode as PPToneMappingMode,
   EffectComposer as PPEffectComposer,
 } from 'postprocessing';
 import { N8AOPostPass } from 'n8ao';
-import { useLightingStore, type ToneMappingMode } from '@/engine/stores/lightingStore';
+import { useLightingStore } from '@/engine/stores/lightingStore';
 
 /**
  * EffectComposer 기반 사실적 렌더링 포스트프로세싱 묶음.
@@ -42,11 +40,10 @@ export function PostFX() {
   const dofEnabled = useLightingStore((s) => s.dofEnabled);
   const dofFocusDistance = useLightingStore((s) => s.dofFocusDistance);
   const dofBokehScale = useLightingStore((s) => s.dofBokehScale);
-  const toneMapping = useLightingStore((s) => s.toneMapping);
   const smaaEnabled = useLightingStore((s) => s.smaaEnabled);
 
   const anyEnabled =
-    bloomEnabled || ssaoEnabled || gtaoEnabled || vignetteEnabled || dofEnabled || smaaEnabled || toneMapping !== 'none';
+    bloomEnabled || ssaoEnabled || gtaoEnabled || vignetteEnabled || dofEnabled || smaaEnabled;
 
   const composerRef = useRef<PPEffectComposer | null>(null);
 
@@ -122,7 +119,9 @@ export function PostFX() {
         <></>
       )}
 
-      {toneMapping !== 'none' ? <ToneMapping mode={mapToneMappingMode(toneMapping)} /> : <></>}
+      {/* 톤매핑은 renderer(gl.toneMapping, App.tsx SyncRenderer)에서 단일 적용 —
+          컴포저에서 ToneMapping 이펙트를 중복 적용하면 ACES 2회 통과로 화면 전체가
+          뿌옇게 씌인 듯한(washed-out) 결과가 나온다. */}
       {/* SMAA — 마지막 단계에서 엣지 안티알리아싱 (계단 현상 완화) */}
       {smaaEnabled ? <SMAA /> : <></>}
     </EffectComposer>
@@ -154,9 +153,11 @@ function N8AOMount({
   distanceFalloff: number;
 }) {
   const { scene, camera, size } = useThree();
-  const passRef = useRef<N8AOPostPass | null>(null);
 
   // Pass 인스턴스 생성 — scene/camera 변경 시 재생성 (보통 1회)
+  // ⚠️ React 19 StrictMode는 useMemo 팩토리를 2회 호출한다. 여기서 생성되는 N8AOPostPass는
+  //   GPU 리소스를 쥐므로, 채택되지 않은 invocation의 인스턴스는 아래 dispose useEffect가
+  //   (pass 가 바뀔 때마다 cleanup 실행) 정리한다 — 렌더 단계 부수효과/ref 변형 금지.
   const pass = useMemo(() => {
     const p = new N8AOPostPass(scene, camera, size.width, size.height);
     // postprocessing.Pass의 needsDepthTexture=true면 composer가 별도 read-only depth texture를
@@ -182,8 +183,6 @@ function N8AOMount({
     // size는 setSize로 별도 동기화 — 의존성에서 제외해 Pass 재생성을 막음
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [scene, camera]);
-
-  passRef.current = pass;
 
   // 리사이즈 동기화
   useEffect(() => {
@@ -216,15 +215,4 @@ function N8AOMount({
   }, [pass]);
 
   return null;
-}
-
-function mapToneMappingMode(mode: ToneMappingMode): PPToneMappingMode {
-  switch (mode) {
-    case 'linear': return PPToneMappingMode.LINEAR;
-    case 'reinhard': return PPToneMappingMode.REINHARD2;
-    case 'cineon': return PPToneMappingMode.CINEON;
-    case 'aces': return PPToneMappingMode.ACES_FILMIC;
-    case 'agx': return PPToneMappingMode.AGX;
-    default: return PPToneMappingMode.ACES_FILMIC;
-  }
 }

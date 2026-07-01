@@ -296,6 +296,20 @@ function FittedModel({ url, p, sel, ghost = false }: { url: string; p: PlacedPro
     };
   }, [scene, p.w, p.d, p.h, p.lift]);
 
+  // 인스턴스 전용 clone(geometry·physical 재질) 정리 — obj 교체(치수 변경 등)·unmount 시 dispose.
+  // geometry/material dispose 는 공유 텍스처를 해제하지 않으므로 안전.
+  useEffect(() => {
+    return () => {
+      obj.traverse((o) => {
+        const mesh = o as Mesh;
+        if (!mesh.isMesh) return;
+        mesh.geometry?.dispose();
+        const mats = Array.isArray(mesh.material) ? mesh.material : [mesh.material];
+        for (const m of mats) m?.dispose();
+      });
+    };
+  }, [obj]);
+
   // 몸통 DP 타입을 호스트(admin)로 전달 — 도어 매칭에 사용. (DP 노드 있는 몸통만)
   useEffect(() => {
     if (dpTypes.length > 0 && p.code) {

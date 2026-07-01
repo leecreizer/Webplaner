@@ -85,7 +85,10 @@ function ModelBody({ model, obj: rawObj }: { model: ImportedModel; obj: Object3D
 
   // 머티리얼 → MeshPhysicalMaterial 인스턴스별 변환 + 슬롯 수집 (full PBR 편집 + 캐시 오염 방지)
   const { obj, matMap, slots } = useMemo(() => {
-    const c = rawObj;
+    // ⚠️ rawObj를 직접 변형하면 안 됨(impure). React StrictMode가 useMemo 팩토리를 2회 호출할 때
+    // rawObj가 두 번 변형돼, React가 채택한 invocation의 matMap과 메시의 실제 재질이 어긋난다
+    // (재질 편집이 화면에 안 먹는 버그). memo 안에서 clone → 각 invocation이 독립 사본을 다뤄 순수.
+    const c = cloneSkeleton(rawObj) as Object3D;
     const matMap = new Map<string, MeshPhysicalMaterial>();
     const slots: MaterialSlot[] = [];
     let idx = 0;
@@ -129,6 +132,14 @@ function ModelBody({ model, obj: rawObj }: { model: ImportedModel; obj: Object3D
     return { obj: c, matMap, slots };
   }, [rawObj]);
 
+  // 변환 머티리얼 정리 — matMap 이 교체되거나(모델 재로드) unmount 시 이전 인스턴스 dispose.
+  // material.dispose() 는 텍스처를 해제하지 않으므로(원본 std 와 참조 공유) 안전하다.
+  useEffect(() => {
+    return () => {
+      for (const mat of matMap.values()) mat.dispose();
+    };
+  }, [matMap]);
+
   // 슬롯 목록 store 등록 (Inspector 용)
   useEffect(() => {
     setMaterialSlots(model.id, slots);
@@ -162,6 +173,13 @@ function ModelBody({ model, obj: rawObj }: { model: ImportedModel; obj: Object3D
     const box = new Box3().setFromObject(obj);
     return new Box3Helper(box, new Color('#22d3ee'));
   }, [obj]);
+
+  // boxHelper geometry/material 정리 (교체·unmount 시)
+  useEffect(() => {
+    return () => {
+      boxHelper.dispose();
+    };
+  }, [boxHelper]);
 
   const rotRad: [number, number, number] = [
     (model.rotation[0] * Math.PI) / 180,
