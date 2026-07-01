@@ -1,5 +1,6 @@
 import { Component, Suspense, memo, useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
-import { Box3, DoubleSide, Group, Mesh, Object3D, Quaternion, Vector3 } from 'three';
+import { Box3, DoubleSide, Group, Mesh, MeshStandardMaterial, Object3D, Quaternion, Vector3 } from 'three';
+import { standardToPhysical } from '@/domain/materials/standardToPhysical';
 import { useFrame } from '@react-three/fiber';
 import { Edges, TransformControls, useGLTF } from '@react-three/drei';
 import { HelperScaler, isHelperRegionName, replaceableSizeOf, pickReplaceableSize } from '@/domain/products/HelperScaler';
@@ -54,7 +55,15 @@ function computeSnap(
   return { dx: bestDx, dz: bestDz };
 }
 
-// ── 도어 열림 충돌 방지: 도어 패널을 2D(XZ) 선분으로 보고, 서로 교차하면 교차 직전까지만 연다 ──
+/**
+ * 인접 도어의 허용 교차 깊이 하한. crossDepth는 0=힌지쪽(깊이 관통)~1=자유끝(살짝 접촉),
+ * 안 겹치면 1. **1.0 = 관통 전혀 불가**(맞닿기 직전까지만 열림). 값을 낮추면 그만큼 서로
+ * 뚫고 들어가는 걸 허용. 도어끼리 관통하면 안 되므로 1.0 유지.
+ */
+const DOOR_MIN_CROSS = 1.0;
+/** 충돌 도어를 접촉 지점보다 더 닫는 여유 각(라디안). 5° — 맞닿아 붙는 느낌 방지. */
+const DOOR_CLEAR_RAD = (5 * Math.PI) / 180;
+// ── 도어 열림 제어: 도어 패널을 2D(XZ) 선분으로 보고, 겹침(교차)이 너무 깊어지기 직전까지 연다 ──
 type P2 = { x: number; z: number };
 /** 도어 패널 선분 [힌지, 자유끝]을 월드 XZ로. thetaRad = 열림 각(라디안, slotPos 방향 자동). */
 function doorPanel(d: PlacedProduct, thetaRad: number): [P2, P2] {
@@ -68,15 +77,22 @@ function doorPanel(d: PlacedProduct, thetaRad: number): [P2, P2] {
   const toW = (pt: P2): P2 => ({ x: d.x + pt.x * Math.cos(ry) + pt.z * Math.sin(ry), z: d.z - pt.x * Math.sin(ry) + pt.z * Math.cos(ry) });
   return [toW(hinge), toW(free)];
 }
-/** 두 선분이 교차하는지(끝점 접촉은 여유로 제외). */
-function segCross(a1: P2, a2: P2, b1: P2, b2: P2): boolean {
+/**
+ * 두 도어 선분 교차점의 "깊이" = min(t,u). 0=힌지쪽(완전 포개짐) ~ 1=자유끝(살짝 겹침).
+ * 교차하지 않으면 1(간섭 없음). 열림 각이 커질수록 값이 작아진다(더 깊이 포개짐).
+ */
+function crossDepth(a1: P2, a2: P2, b1: P2, b2: P2): number {
   const d = (a2.x - a1.x) * (b2.z - b1.z) - (a2.z - a1.z) * (b2.x - b1.x);
-  if (Math.abs(d) < 1e-9) return false;
+  if (Math.abs(d) < 1e-9) return 1;
   const t = ((b1.x - a1.x) * (b2.z - b1.z) - (b1.z - a1.z) * (b2.x - b1.x)) / d;
   const u = ((b1.x - a1.x) * (a2.z - a1.z) - (b1.z - a1.z) * (a2.x - a1.x)) / d;
-  return t > 0.02 && t < 0.98 && u > 0.02 && u < 0.98;
+  if (t > 0 && t < 1 && u > 0 && u < 1) return Math.min(t, u);
+  return 1;
 }
-/** 도어별 최대 열림 각(도) — 교차하는 쌍은 교차 직전까지, 아니면 설정값. */
+/**
+ * 도어별 열림 각(도). 인접 도어는 **부분 겹침 허용**하되, 교차 깊이가 DOOR_MIN_CROSS 밑으로
+ * (=거의 완전히 포개짐) 내려가기 직전까지만 연다. 얕게 겹치거나 안 겹치면 설정값 그대로 활짝.
+ */
 function computeDoorClamp(placed: PlacedProduct[], openDeg: number): Map<string, number> {
   const openRad = (openDeg * Math.PI) / 180;
   const doors = placed.filter((d) => d.parentId && d.slotPos);
@@ -86,15 +102,18 @@ function computeDoorClamp(placed: PlacedProduct[], openDeg: number): Map<string,
     for (let j = i + 1; j < doors.length; j++) {
       const A = doors[i], B = doors[j];
       const [a1, a2] = doorPanel(A, openRad), [b1, b2] = doorPanel(B, openRad);
-      if (!segCross(a1, a2, b1, b2)) continue; // 안 겹치면 그대로
-      let lo = 0, hi = openRad; // 겹치면 이진탐색으로 교차 직전 공유각
-      for (let k = 0; k < 14; k++) {
+      if (crossDepth(a1, a2, b1, b2) >= DOOR_MIN_CROSS) continue; // 안 겹치거나 얕게 겹침 → 활짝
+      // 너무 깊게 포개짐 → 교차 깊이가 MIN이 되는 각까지만 축소(부분 겹침은 유지).
+      let lo = 0, hi = openRad;
+      for (let k = 0; k < 18; k++) {
         const mid = (lo + hi) / 2;
         const [pa1, pa2] = doorPanel(A, mid), [pb1, pb2] = doorPanel(B, mid);
-        if (segCross(pa1, pa2, pb1, pb2)) hi = mid; else lo = mid;
+        if (crossDepth(pa1, pa2, pb1, pb2) >= DOOR_MIN_CROSS) lo = mid; else hi = mid;
       }
-      clamp.set(A.id, Math.min(clamp.get(A.id)!, lo));
-      clamp.set(B.id, Math.min(clamp.get(B.id)!, lo));
+      // 접촉 직전(lo)에서 5° 더 닫아 여유 간격 확보(맞닿아 붙는 느낌 방지).
+      const safe = Math.max(0, lo - DOOR_CLEAR_RAD);
+      clamp.set(A.id, Math.min(clamp.get(A.id)!, safe));
+      clamp.set(B.id, Math.min(clamp.get(B.id)!, safe));
     }
   }
   const deg = new Map<string, number>();
@@ -134,7 +153,19 @@ function FittedModel({ url, p, sel, ghost = false }: { url: string; p: PlacedPro
     // useGLTF 공유 geometry 보호 — 인스턴스 전용 deep clone 후 변형.
     const clone = scene.clone(true);
     clone.traverse((o) => {
-      if (o instanceof Mesh) o.geometry = o.geometry.clone();
+      if (o instanceof Mesh) {
+        o.geometry = o.geometry.clone();
+        // 기본 도형(BoxMesh)처럼 그림자를 주고받게 — GLB 메시는 기본값이 false라 조명/그림자/AO가
+        // 안 먹는 것처럼 보인다. 그림자 캐스팅+수신 켜서 실시간 렌더 환경요소를 동일 적용.
+        o.castShadow = true;
+        o.receiveShadow = true;
+        // 재질을 MeshPhysicalMaterial로 변환 — ImportedModels와 동일. HDRI 환경맵(IBL) 반사·조명
+        // 반응이 살아난다. (GLB 기본 Standard 재질은 환경 반사가 약함.) 인스턴스 전용 복제이므로
+        // 공유 캐시 오염 없음.
+        const mats = Array.isArray(o.material) ? o.material : [o.material];
+        const conv = mats.map((m) => standardToPhysical(m as MeshStandardMaterial));
+        o.material = Array.isArray(o.material) ? conv : conv[0];
+      }
     });
 
     const scaler = HelperScaler.build(clone);
@@ -348,7 +379,9 @@ function FittedModel({ url, p, sel, ghost = false }: { url: string; p: PlacedPro
   useFrame((_, dt) => {
     if (drawers.length === 0) return;
     if (drawerProg.current.length !== drawers.length) drawerProg.current = drawers.map(() => 0);
-    openElapsed.current = doorsOpen ? openElapsed.current + dt : Math.max(0, openElapsed.current - dt);
+    // 닫히면 즉시 0으로 리셋 — 재오픈 시 서랍이 매번 처음부터 순차로 열리도록.
+    // (천천히 감소시키면 오래 열어둔 뒤엔 openElapsed가 커서, 다시 열 때 모든 서랍이 동시에 열림)
+    openElapsed.current = doorsOpen ? openElapsed.current + dt : 0;
     for (let i = 0; i < drawers.length; i++) {
       const startAt = DOOR_OPEN_DELAY + i * DRAWER_STAGGER; // 아래(i=0)부터
       const target = doorsOpen && openElapsed.current >= startAt ? 1 : 0;

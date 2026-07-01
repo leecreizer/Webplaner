@@ -111,6 +111,22 @@ function SunInspector() {
           step={1}
           onChange={s.setShadowFrustumSize}
         />
+        <NumberField
+          label="camera near(m)"
+          value={s.shadowCameraNear}
+          min={0.01}
+          max={5}
+          step={0.05}
+          onChange={s.setShadowCameraNear}
+        />
+        <NumberField
+          label="camera far(m)"
+          value={s.shadowCameraFar}
+          min={10}
+          max={300}
+          step={5}
+          onChange={s.setShadowCameraFar}
+        />
         <div style={{ fontSize: 10, opacity: 0.55, marginTop: 4, lineHeight: 1.4 }}>
           • bias 가 음수로 클수록 그림자가 객체에서 *떨어져 시작* (peter-panning).
           0 에 가까우면 acne (얼룩).

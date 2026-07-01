@@ -62,6 +62,10 @@ export interface LightingState {
   shadowNormalBias: number;
   /** shadow camera frustum 반경(m). 인테리어 ~10m, 야외 ~30m. 클수록 정밀도 ↓. */
   shadowFrustumSize: number;
+  /** shadow camera near(m). 광원에서 이 거리부터 그림자 렌더. 너무 크면 가까운 면이 그림자에서 잘림. */
+  shadowCameraNear: number;
+  /** shadow camera far(m). 광원에서 이 거리까지 그림자 렌더. 너무 작으면 먼 면 그림자 누락. */
+  shadowCameraFar: number;
   /** 그림자 강도 (0=거의 없음, 1=완전 검정). ambientLight 강도를 역으로 줄여 darkening. */
   shadowStrength: number;
   /** 그림자(=음영) 색. ambientLight의 color로 적용 — 그림자 진 영역의 색조. */
@@ -115,6 +119,11 @@ export interface LightingState {
   bloomEnabled: boolean;
   bloomIntensity: number;
 
+  /** SSR (Screen-Space Reflections) — 래스터 모드 모델↔모델·환경 실시간 반사. 성능 비용 있음. */
+  ssrEnabled: boolean;
+  /** SSR 렌더 해상도 배율(0.25~1). 낮추면 빠르지만 반사가 흐려짐. */
+  ssrResolutionScale: number;
+
   /** N8AO — 모서리·구석을 자연스럽게 어둡게 (Horizon-Based Ambient Occlusion). */
   ssaoEnabled: boolean;
   ssaoIntensity: number;
@@ -159,6 +168,8 @@ export interface LightingState {
   setShadowBias: (v: number) => void;
   setShadowNormalBias: (v: number) => void;
   setShadowFrustumSize: (v: number) => void;
+  setShadowCameraNear: (v: number) => void;
+  setShadowCameraFar: (v: number) => void;
   setShadowColor: (v: string) => void;
   setGiMode: (v: GIMode) => void;
   setGiIntensity: (v: number) => void;
@@ -178,6 +189,8 @@ export interface LightingState {
   setToneMapping: (v: ToneMappingMode) => void;
   setToneMappingExposure: (v: number) => void;
   setBloomEnabled: (v: boolean) => void;
+  setSsrEnabled: (v: boolean) => void;
+  setSsrResolutionScale: (v: number) => void;
   setBloomIntensity: (v: number) => void;
   setSsaoEnabled: (v: boolean) => void;
   setSsaoIntensity: (v: number) => void;
@@ -244,6 +257,8 @@ const DEFAULTS = {
   shadowBias: -0.0005,
   shadowNormalBias: 0.02,
   shadowFrustumSize: 15,
+  shadowCameraNear: 0.5,
+  shadowCameraFar: 100,
   shadowColor: '#000000',
 
   // HemisphereLight 도 ambient 와 동일하게 전역 균일 — 디폴트 0.2 로 낮춤. 천창/실외 효과
@@ -274,6 +289,10 @@ const DEFAULTS = {
 
   bloomEnabled: true,
   bloomIntensity: 0.35,
+
+  // SSR — 래스터 모델↔모델 반사. 성능 비용이 있어 기본 OFF. 조명 패널에서 토글.
+  ssrEnabled: false,
+  ssrResolutionScale: 0.5,
 
   // N8AO — 모서리/구석 darken. 디폴트 OFF — 강한 intensity 가 화면 검정 plate 처럼 보일 수
   // 있어 사용자가 명시적으로 켜는 게 안전. ssao panel 에서 토글 + 강도 조절.
@@ -331,6 +350,8 @@ export const useLightingStore = create<LightingState>((set) => ({
   setShadowBias: (v) => set({ shadowBias: v }),
   setShadowNormalBias: (v) => set({ shadowNormalBias: v }),
   setShadowFrustumSize: (v) => set({ shadowFrustumSize: v }),
+  setShadowCameraNear: (v) => set({ shadowCameraNear: v }),
+  setShadowCameraFar: (v) => set({ shadowCameraFar: v }),
   setShadowColor: (v) => set({ shadowColor: v }),
   setGiMode: (v) => set({ giMode: v }),
   setGiIntensity: (v) => set({ giIntensity: v }),
@@ -367,6 +388,8 @@ export const useLightingStore = create<LightingState>((set) => ({
   setToneMapping: (v) => set({ toneMapping: v }),
   setToneMappingExposure: (v) => set({ toneMappingExposure: v }),
   setBloomEnabled: (v) => set({ bloomEnabled: v }),
+  setSsrEnabled: (v) => set({ ssrEnabled: v }),
+  setSsrResolutionScale: (v) => set({ ssrResolutionScale: v }),
   setBloomIntensity: (v) => set({ bloomIntensity: v }),
   setSsaoEnabled: (v) => set({ ssaoEnabled: v }),
   setSsaoIntensity: (v) => set({ ssaoIntensity: v }),

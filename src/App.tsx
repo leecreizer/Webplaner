@@ -21,6 +21,7 @@ import { NodeMarkers } from '@/features/drawing/NodeMarkers';
 import { SunGizmo } from '@/features/scene/SunGizmo';
 import { SpaceLightmap } from '@/engine/lighting/SpaceLightmap';
 import { SceneLightProbe } from '@/engine/lighting/SceneLightProbe';
+import { ReflectionProbe } from '@/engine/lighting/ReflectionProbe';
 import { IrradianceProbeGrid } from '@/engine/lighting/IrradianceProbeGrid';
 import { ImportedModels } from '@/features/models/ImportedModels';
 import { DynamicSky } from '@/engine/lighting/DynamicSky';
@@ -121,6 +122,7 @@ export default function App({
           <ProductPlacement />
           <SpaceLightmap />
           <SceneLightProbe />
+          <ReflectionProbe />
           <IrradianceProbeGrid />
           <PathtracerRenderer />
           <CustomLights />
@@ -193,6 +195,8 @@ function SceneLights() {
   const shadowBias = useLightingStore((s) => s.shadowBias);
   const shadowNormalBias = useLightingStore((s) => s.shadowNormalBias);
   const shadowFrustumSize = useLightingStore((s) => s.shadowFrustumSize);
+  const shadowCameraNear = useLightingStore((s) => s.shadowCameraNear);
+  const shadowCameraFar = useLightingStore((s) => s.shadowCameraFar);
   const shadowColor = useLightingStore((s) => s.shadowColor);
   const giMode = useLightingStore((s) => s.giMode);
   const giIntensity = useLightingStore((s) => s.giIntensity);
@@ -226,7 +230,7 @@ function SceneLights() {
           겹치므로 모드별로 *하나만* 렌더. */}
       {!ptEnabled && (
         <directionalLight
-          key={`dir-${mapSize}-${castShadow ? 1 : 0}-${shadowSoftness}-${shadowFrustumSize}`}
+          key={`dir-${mapSize}-${castShadow ? 1 : 0}-${shadowSoftness}-${shadowFrustumSize}-${shadowCameraNear}-${shadowCameraFar}`}
           position={position}
           intensity={sunVisible ? intensity : 0}
           castShadow={sunVisible && castShadow}
@@ -239,8 +243,8 @@ function SceneLights() {
           shadow-camera-right={shadowFrustumSize}
           shadow-camera-top={shadowFrustumSize}
           shadow-camera-bottom={-shadowFrustumSize}
-          shadow-camera-near={0.5}
-          shadow-camera-far={100}
+          shadow-camera-near={shadowCameraNear}
+          shadow-camera-far={shadowCameraFar}
         />
       )}
       {ptEnabled && sunVisible && (

@@ -203,6 +203,10 @@ export function LightingPanel() {
 
           <Section title="PostFX">
             <Checkbox label="안티알리아싱 (SMAA)" checked={s.smaaEnabled} onChange={s.setSmaaEnabled} />
+            <Checkbox label="SSR — 실시간 반사 (모델↔모델·환경)" checked={s.ssrEnabled} onChange={s.setSsrEnabled} />
+            {s.ssrEnabled && (
+              <Slider label="SSR 해상도" min={0.25} max={1} step={0.05} value={s.ssrResolutionScale} onChange={s.setSsrResolutionScale} />
+            )}
             <Checkbox label="Bloom (밝은 영역 글로우)" checked={s.bloomEnabled} onChange={s.setBloomEnabled} />
             {s.bloomEnabled && (
               <Slider label="Bloom 강도" min={0} max={2} step={0.05} value={s.bloomIntensity} onChange={s.setBloomIntensity} />

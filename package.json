@@ -1,7 +1,7 @@
 {
   "name": "homeplanner3-web",
   "private": true,
-  "version": "0.1.6",
+  "version": "0.1.7",
   "type": "module",
   "description": "HomePlanner3 Three.js/React migration of the Unity 6.3 WebGL project. Pure web stack — no Unity runtime.",
   "scripts": {
@@ -12,14 +12,14 @@
     "test": "vitest run"
   },
   "dependencies": {
-    "@react-three/drei": "^9.117.3",
-    "@react-three/fiber": "^8.17.10",
-    "@react-three/postprocessing": "^2.19.1",
-    "n8ao": "^1.10.1",
+    "@react-three/drei": "^10.7.7",
+    "@react-three/fiber": "^9.6.1",
+    "@react-three/postprocessing": "^3.0.4",
+    "n8ao": "^1.10.2",
     "postprocessing": "^6.39.1",
-    "react": "^18.3.1",
-    "react-dom": "^18.3.1",
-    "three": "^0.171.0",
+    "react": "^19.2.0",
+    "react-dom": "^19.2.0",
+    "three": "^0.185.0",
     "three-bvh-csg": "^0.0.18",
     "three-gpu-pathtracer": "^0.0.24",
     "three-mesh-bvh": "^0.9.10",
@@ -27,9 +27,9 @@
   },
   "devDependencies": {
     "@types/node": "^22.10.2",
-    "@types/react": "^18.3.16",
-    "@types/react-dom": "^18.3.5",
-    "@types/three": "^0.171.0",
+    "@types/react": "^19.2.0",
+    "@types/react-dom": "^19.2.0",
+    "@types/three": "^0.185.0",
     "@vitejs/plugin-react": "^4.3.4",
     "typescript": "^5.7.2",
     "vite": "^6.0.3",
