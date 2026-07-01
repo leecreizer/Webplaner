@@ -1,4 +1,4 @@
-import { Component, Suspense, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
+import { Component, Suspense, memo, useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { Box3, DoubleSide, Group, Mesh, Object3D, Quaternion, Vector3 } from 'three';
 import { useFrame } from '@react-three/fiber';
 import { Edges, TransformControls, useGLTF } from '@react-three/drei';
@@ -13,6 +13,45 @@ const DOOR_FRONT_GAP = 5 * M;
 const DOOR_OPEN_DELAY = 0.9;
 /** 서랍이 여러 개일 때 아래→위 순차 간격(초). */
 const DRAWER_STAGGER = 0.35;
+/** 상품 간 스냅(자석) 임계값(m). 이동 중 인접 상품 모서리와 이 거리 안이면 붙는다. */
+const SNAP_DIST = 0.05;
+
+/** 상품의 XZ 평면 AABB(m). 회전(ry≈90/270)이면 폭/깊이를 교환. ox/oz는 임시 이동량. */
+function footprintXZ(p: PlacedProduct, ox = 0, oz = 0) {
+  const rot = (((p.ry % 180) + 180) % 180);
+  const near90 = Math.abs(rot - 90) < 45;
+  const ex = (near90 ? p.d : p.w) * M; // x 방향 폭
+  const ez = (near90 ? p.w : p.d) * M; // z 방향 깊이
+  const cx = p.x + ox, cz = p.z + oz;
+  return { minx: cx - ex / 2, maxx: cx + ex / 2, minz: cz - ez / 2, maxz: cz + ez / 2 };
+}
+
+/**
+ * 이동 중 선택 상품(합집합 AABB)이 다른 상품과 충돌·근접하면 모서리를 맞춰 붙일 보정량(dx,dz)을 계산.
+ * - 한 축이 겹치면(또는 근접) 반대 축의 모서리를 flush(맞닿음/정렬)로 스냅.
+ */
+function computeSnap(
+  union: { minx: number; maxx: number; minz: number; maxz: number },
+  others: PlacedProduct[],
+) {
+  let bestDx = 0, bestDz = 0, bx = SNAP_DIST, bz = SNAP_DIST;
+  for (const o of others) {
+    const f = footprintXZ(o);
+    const zOverlap = Math.min(union.maxz, f.maxz) - Math.max(union.minz, f.minz);
+    if (zOverlap > -SNAP_DIST) { // z가 겹치거나 근접 → x 모서리 스냅
+      for (const [ue, oe] of [[union.minx, f.maxx], [union.maxx, f.minx], [union.minx, f.minx], [union.maxx, f.maxx]]) {
+        const d = oe - ue; if (Math.abs(d) < bx) { bx = Math.abs(d); bestDx = d; }
+      }
+    }
+    const xOverlap = Math.min(union.maxx, f.maxx) - Math.max(union.minx, f.minx);
+    if (xOverlap > -SNAP_DIST) { // x가 겹치거나 근접 → z 모서리 스냅
+      for (const [ue, oe] of [[union.minz, f.maxz], [union.maxz, f.minz], [union.minz, f.minz], [union.maxz, f.maxz]]) {
+        const d = oe - ue; if (Math.abs(d) < bz) { bz = Math.abs(d); bestDz = d; }
+      }
+    }
+  }
+  return { dx: bestDx, dz: bestDz };
+}
 /** 서랍 돌출량 = 깊이 × 이 비율. 2/3면 뒤 1/3이 남아 몸통을 벗어나지 않음. */
 const DRAWER_OPEN_RATIO = 2 / 3;
 
@@ -284,8 +323,9 @@ function FittedModel({ url, p, sel, ghost = false }: { url: string; p: PlacedPro
   );
 }
 
-/** 배치 아이템 — 모델 있으면 모델, 없으면 박스. 도어(parentId+slotPos)는 힌지(바깥 변) 기준 열림 애니메이션. */
-function PlacedItem({ p, sel, onDown, doorsOpen, doorOpenDeg }: { p: PlacedProduct; sel: boolean; onDown: (id: string, code: string | undefined, name: string, shift: boolean) => void; doorsOpen: boolean; doorOpenDeg: number }) {
+/** 배치 아이템 — 모델 있으면 모델, 없으면 박스. 도어(parentId+slotPos)는 힌지(바깥 변) 기준 열림 애니메이션.
+ *  memo: 이동 시 store.update가 미변경 상품은 같은 객체 참조를 유지하므로, 바뀐 항목만 리렌더(끊김 완화). */
+const PlacedItem = memo(function PlacedItem({ p, sel, onDown, doorsOpen, doorOpenDeg }: { p: PlacedProduct; sel: boolean; onDown: (id: string, code: string | undefined, name: string, shift: boolean) => void; doorsOpen: boolean; doorOpenDeg: number }) {
   const isDoor = !!p.parentId && !!p.slotPos;
   const hingeRef = useRef<Group>(null);
   const angleRef = useRef(0);
@@ -328,7 +368,7 @@ function PlacedItem({ p, sel, onDown, doorsOpen, doorOpenDeg }: { p: PlacedProdu
       ) : content}
     </group>
   );
-}
+});
 
 /**
  * 상품 클릭 배치 (호스트 어드민 ↔ 웹플래너 연동).
@@ -371,13 +411,14 @@ export function ProductPlacement() {
     lastPivot.current = { x: cx, z: cz, ry: 0 };
   }, [pivotObj, selectedIds]);
 
-  // 박스 클릭 선택 (Shift = 다중 토글), 호스트에 선택 정보 전송
-  const onBoxDown = (id: string, code: string | undefined, name: string, shift: boolean) => {
+  // 박스 클릭 선택 (Shift = 다중 토글), 호스트에 선택 정보 전송.
+  // useCallback: PlacedItem memo가 유지되도록 안정 참조. (select는 zustand 액션이라 안정)
+  const onBoxDown = useCallback((id: string, code: string | undefined, name: string, shift: boolean) => {
     select(id, shift);
     const ids = usePlacedProductStore.getState().selectedIds;
     if (ids.length <= 1) window.parent?.postMessage({ type: 'hp3:selected', code, name }, '*');
     else window.parent?.postMessage({ type: 'hp3:selected', code, name, count: ids.length }, '*');
-  };
+  }, [select]);
 
   // 기즈모 변경 → 선택 박스 전체에 이동/회전 델타 적용
   const onPivotChange = () => {
@@ -387,7 +428,18 @@ export function ProductPlacement() {
     const dx = px - last.x, dz = pz - last.z, dRy = pry - last.ry;
     const st = usePlacedProductStore.getState();
     if (gizmoMode === 'translate' && (dx || dz)) {
-      for (const b of st.placed) if (selectedSet.has(b.id)) update(b.id, { x: b.x + dx, z: b.z + dz });
+      // 1) 델타 적용한 임시 위치로 선택 상품 합집합 AABB 계산
+      const sel = st.placed.filter((b) => selectedSet.has(b.id));
+      const others = st.placed.filter((b) => !selectedSet.has(b.id) && !b.parentId); // 도어 등 부속 제외
+      const union = { minx: Infinity, maxx: -Infinity, minz: Infinity, maxz: -Infinity };
+      for (const b of sel) {
+        const f = footprintXZ(b, dx, dz);
+        union.minx = Math.min(union.minx, f.minx); union.maxx = Math.max(union.maxx, f.maxx);
+        union.minz = Math.min(union.minz, f.minz); union.maxz = Math.max(union.maxz, f.maxz);
+      }
+      // 2) 충돌·근접 시 모서리 스냅 보정
+      const snap = others.length && isFinite(union.minx) ? computeSnap(union, others) : { dx: 0, dz: 0 };
+      for (const b of sel) update(b.id, { x: b.x + dx + snap.dx, z: b.z + dz + snap.dz });
     } else if (gizmoMode === 'rotate' && dRy) {
       const cx = last.x, cz = last.z, cos = Math.cos(dRy), sin = Math.sin(dRy);
       for (const b of st.placed) if (selectedSet.has(b.id)) {
@@ -401,13 +453,18 @@ export function ProductPlacement() {
   // 배치 목록이 바뀌면 호스트(어드민)로 전송 → 견적보기 등에서 사용.
   // 견적 치수는 **콘텐츠 마스터 사이즈(masterW/H/D)** 우선(없으면 실제 w/h/d). 도어는 stretch된
   // 지오메트리가 아니라 카탈로그 변형 상품의 등록 치수를 내보낸다.
+  // 디바운스: 드래그 이동 중 매 프레임 postMessage(iframe 간)로 admin이 매 프레임 리렌더되어 끊기므로,
+  // 변경이 멎은 뒤 ~120ms에 한 번만 전송한다.
   useEffect(() => {
-    const items = placed.map((p) => ({
-      id: p.id, code: p.code, name: p.name,
-      w: p.masterW ?? p.w, d: p.masterD ?? p.d, h: p.masterH ?? p.h, lift: p.lift ?? 0,
-      modelCode: p.modelCode, itemCode: p.itemCode, parentId: p.parentId,
-    }));
-    window.parent?.postMessage({ type: 'hp3:scene', count: placed.length, items }, '*');
+    const t = window.setTimeout(() => {
+      const items = placed.map((p) => ({
+        id: p.id, code: p.code, name: p.name,
+        w: p.masterW ?? p.w, d: p.masterD ?? p.d, h: p.masterH ?? p.h, lift: p.lift ?? 0,
+        modelCode: p.modelCode, itemCode: p.itemCode, parentId: p.parentId,
+      }));
+      window.parent?.postMessage({ type: 'hp3:scene', count: placed.length, items }, '*');
+    }, 120);
+    return () => clearTimeout(t);
   }, [placed]);
 
   // 기즈모 모드 단축키: G/T=이동, R=회전. O=도어 열림/닫힘 토글(애니메이션 확인용).
@@ -539,7 +596,17 @@ export function ProductPlacement() {
               if (e.button === 2) { cancel(); setGhost(null); return; } // 우클릭 취소
               if (e.button !== 0) return;
               e.stopPropagation();
-              place(e.point.x, e.point.z);
+              // 배치 시에도 인접 상품과 충돌 체크 → 모서리 스냅.
+              let px = e.point.x, pz = e.point.z;
+              const st = usePlacedProductStore.getState();
+              if (pending && st.placed.length) {
+                const ghostP = { ...pending, id: 'ghost', x: px, z: pz, ry: 0 } as PlacedProduct;
+                const f = footprintXZ(ghostP);
+                const others = st.placed.filter((b) => !b.parentId);
+                const snap = computeSnap(f, others);
+                px += snap.dx; pz += snap.dz;
+              }
+              place(px, pz);
               setGhost(null);
             }}
           >
