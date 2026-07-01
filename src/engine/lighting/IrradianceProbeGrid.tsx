@@ -93,35 +93,48 @@ export function IrradianceProbeGrid() {
     });
     const cubeCam = new CubeCamera(0.1, 1000, target);
     let cancelled = false;
+    // 복원 목표값은 스냅샷이 아닌 **계산값**(intensity/N) — 이전 캡처가 cancel 로 중단돼
+    // probe 가 0 인 채 남아도(StrictMode 첫 실행이 항상 cancel 됨) 0 을 "원본"으로 오인해
+    // GI 가 영구히 꺼지는 버그를 차단한다.
+    const restore = () => {
+      const n = Math.max(1, probesRef.current.length);
+      const per = useLightingStore.getState().lightProbeIntensity / n;
+      for (const p of probesRef.current) p.intensity = per;
+    };
     (async () => {
       try {
-        // 모든 probe 를 잠시 비활성 (self-capture 영향 줄임)
-        const original = probesRef.current.map((p) => p.intensity);
-        for (const p of probesRef.current) p.intensity = 0;
-        for (let i = 0; i < centers.length; i++) {
-          if (cancelled) return;
-          const probe = probesRef.current[i];
-          if (!probe) continue;
-          cubeCam.position.copy(centers[i]);
-          cubeCam.update(gl, scene);
-          const newProbe = await LightProbeGenerator.fromCubeRenderTarget(gl, target);
-          if (cancelled) return;
-          probe.sh.copy(newProbe.sh);
+        // ── 2-bounce 캡처 ──
+        // pass 1: probe OFF 상태에서 직접광만 캡처 → SH 적용 (1-bounce)
+        // pass 2: 1-bounce SH 가 켜진 씬을 다시 캡처 → 간접광이 한 번 더 튕긴 2-bounce SH.
+        //   실내에서 벽/바닥 반사색이 서로에게 스며들어 SSGI 에 근접한 풍부함을 얻는다.
+        for (let pass = 0; pass < 2; pass++) {
+          // pass 1 은 self-capture 방지로 OFF, pass 2 는 1-bounce 결과를 켠 채 캡처
+          if (pass === 0) for (const p of probesRef.current) p.intensity = 0;
+          else restore();
+          for (let i = 0; i < centers.length; i++) {
+            if (cancelled) return;
+            const probe = probesRef.current[i];
+            if (!probe) continue;
+            cubeCam.position.copy(centers[i]);
+            cubeCam.update(gl, scene);
+            const newProbe = await LightProbeGenerator.fromCubeRenderTarget(gl, target);
+            if (cancelled) return;
+            probe.sh.copy(newProbe.sh);
+          }
         }
-        // intensity 복원
-        for (let i = 0; i < probesRef.current.length; i++) {
-          probesRef.current[i].intensity = original[i];
-        }
-        console.log('[ProbeGrid] 재캡처 + SH 추출 완료', { probes: centers.length });
+        console.log('[ProbeGrid] 재캡처 + SH 추출 완료 (2-bounce)', { probes: centers.length });
       } catch (e) {
         console.warn('[ProbeGrid] capture 실패', e);
+      } finally {
+        // cancel/에러 포함 어떤 경로로 끝나도 intensity 는 반드시 복원
+        restore();
       }
     })();
     return () => {
       cancelled = true;
       target.dispose();
     };
-  }, [enabled, gl, scene, centers, wallsLen, azimuth, elevation]);
+  }, [enabled, gl, scene, centers, wallsLen, azimuth, elevation, intensity]);
 
   return null;
 }
