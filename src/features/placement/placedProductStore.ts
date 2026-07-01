@@ -20,6 +20,9 @@ export interface PendingProduct {
   slotPos?: 'L' | 'R';
   /** 좌우 미러(피봇 보정) — POS='X' 범용 도어를 반대편(R) 슬롯에 붙일 때 대칭이 되도록 X축 반전. */
   mirror?: boolean;
+  /** 실제 렌더된 모델의 가로/세로(mm, 보이는 bbox). 스냅을 등록치수가 아닌 실제 크기로 하기 위함. */
+  renderW?: number;
+  renderD?: number;
   // 견적용 — 콘텐츠 마스터 사이즈(카탈로그 등록 치수). 실제 렌더 지오메트리(w/h/d, stretch)와 별개.
   // 견적(hp3:scene)에는 이 마스터 사이즈가 나간다. 미설정 시 w/h/d 사용.
   masterW?: number;

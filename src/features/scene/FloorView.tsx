@@ -6,6 +6,7 @@ import { Brush, Evaluator, SUBTRACTION, ADDITION } from 'three-bvh-csg';
 import { Space } from '@/domain/structures/Space';
 import { polyGeometry, polyGeometryExtruded } from '@/engine/mesh/MeshGenerator';
 import { useEditStore } from '@/features/editing/editStore';
+import { usePlacedProductStore } from '@/features/placement/placedProductStore';
 
 const _csgEval = new Evaluator();
 
@@ -88,7 +89,15 @@ export function FloorView({
         onPointerDown={(e) => {
           if (e.button !== 0) return;
           e.stopPropagation();
-          selectMesh(myKey, e.shiftKey);
+          // 에디트 모드일 때만 바닥(표면) 선택(재질/뚫기·돌출용). 그 외엔 바닥=배경 →
+          // 클릭 시 상품·메시 선택 전부 해제(오브젝트 아닌 화면 클릭 = 해제).
+          if (useEditStore.getState().enabled) {
+            selectMesh(myKey, e.shiftKey);
+          } else {
+            selectMesh(null);
+            const ps = usePlacedProductStore.getState();
+            if (ps.selectedIds.length > 0) { ps.select(null); window.parent?.postMessage({ type: 'hp3:deselected' }, '*'); }
+          }
         }}
       >
         <meshStandardMaterial

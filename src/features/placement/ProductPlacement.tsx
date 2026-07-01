@@ -20,8 +20,9 @@ const SNAP_DIST = 0.05;
 function footprintXZ(p: PlacedProduct, ox = 0, oz = 0) {
   const rot = (((p.ry % 180) + 180) % 180);
   const near90 = Math.abs(rot - 90) < 45;
-  const ex = (near90 ? p.d : p.w) * M; // x 방향 폭
-  const ez = (near90 ? p.w : p.d) * M; // z 방향 깊이
+  const fw = p.renderW ?? p.w, fd = p.renderD ?? p.d; // 실제 렌더 크기 우선(스냅 시 시각 flush)
+  const ex = (near90 ? fd : fw) * M; // x 방향 폭
+  const ez = (near90 ? fw : fd) * M; // z 방향 깊이
   const cx = p.x + ox, cz = p.z + oz;
   return { minx: cx - ex / 2, maxx: cx + ex / 2, minz: cz - ez / 2, maxz: cz + ez / 2 };
 }
@@ -51,6 +52,54 @@ function computeSnap(
     }
   }
   return { dx: bestDx, dz: bestDz };
+}
+
+// ── 도어 열림 충돌 방지: 도어 패널을 2D(XZ) 선분으로 보고, 서로 교차하면 교차 직전까지만 연다 ──
+type P2 = { x: number; z: number };
+/** 도어 패널 선분 [힌지, 자유끝]을 월드 XZ로. thetaRad = 열림 각(라디안, slotPos 방향 자동). */
+function doorPanel(d: PlacedProduct, thetaRad: number): [P2, P2] {
+  const ry = (d.ry * Math.PI) / 180;
+  const halfW = (d.w * M) / 2;
+  const hingeX = d.slotPos === 'R' ? halfW : -halfW;
+  const a = (d.slotPos === 'R' ? 1 : -1) * thetaRad; // 열림 방향(L=−, R=+)
+  const fvx = -2 * hingeX; // 닫힘 시 힌지→자유끝 벡터(x)
+  const hinge = { x: hingeX, z: 0 };
+  const free = { x: hingeX + fvx * Math.cos(a), z: -fvx * Math.sin(a) };
+  const toW = (pt: P2): P2 => ({ x: d.x + pt.x * Math.cos(ry) + pt.z * Math.sin(ry), z: d.z - pt.x * Math.sin(ry) + pt.z * Math.cos(ry) });
+  return [toW(hinge), toW(free)];
+}
+/** 두 선분이 교차하는지(끝점 접촉은 여유로 제외). */
+function segCross(a1: P2, a2: P2, b1: P2, b2: P2): boolean {
+  const d = (a2.x - a1.x) * (b2.z - b1.z) - (a2.z - a1.z) * (b2.x - b1.x);
+  if (Math.abs(d) < 1e-9) return false;
+  const t = ((b1.x - a1.x) * (b2.z - b1.z) - (b1.z - a1.z) * (b2.x - b1.x)) / d;
+  const u = ((b1.x - a1.x) * (a2.z - a1.z) - (b1.z - a1.z) * (a2.x - a1.x)) / d;
+  return t > 0.02 && t < 0.98 && u > 0.02 && u < 0.98;
+}
+/** 도어별 최대 열림 각(도) — 교차하는 쌍은 교차 직전까지, 아니면 설정값. */
+function computeDoorClamp(placed: PlacedProduct[], openDeg: number): Map<string, number> {
+  const openRad = (openDeg * Math.PI) / 180;
+  const doors = placed.filter((d) => d.parentId && d.slotPos);
+  const clamp = new Map<string, number>();
+  for (const d of doors) clamp.set(d.id, openRad);
+  for (let i = 0; i < doors.length; i++) {
+    for (let j = i + 1; j < doors.length; j++) {
+      const A = doors[i], B = doors[j];
+      const [a1, a2] = doorPanel(A, openRad), [b1, b2] = doorPanel(B, openRad);
+      if (!segCross(a1, a2, b1, b2)) continue; // 안 겹치면 그대로
+      let lo = 0, hi = openRad; // 겹치면 이진탐색으로 교차 직전 공유각
+      for (let k = 0; k < 14; k++) {
+        const mid = (lo + hi) / 2;
+        const [pa1, pa2] = doorPanel(A, mid), [pb1, pb2] = doorPanel(B, mid);
+        if (segCross(pa1, pa2, pb1, pb2)) hi = mid; else lo = mid;
+      }
+      clamp.set(A.id, Math.min(clamp.get(A.id)!, lo));
+      clamp.set(B.id, Math.min(clamp.get(B.id)!, lo));
+    }
+  }
+  const deg = new Map<string, number>();
+  clamp.forEach((r, id) => deg.set(id, (r * 180) / Math.PI));
+  return deg;
 }
 /** 서랍 돌출량 = 깊이 × 이 비율. 2/3면 뒤 1/3이 남아 몸통을 벗어나지 않음. */
 const DRAWER_OPEN_RATIO = 2 / 3;
@@ -230,6 +279,15 @@ function FittedModel({ url, p, sel, ghost = false }: { url: string; p: PlacedPro
     }
   }, [doorSlots, p.code]);
 
+  // 실제 렌더 크기(selSize)를 store에 발행 → 스냅이 등록치수가 아닌 보이는 크기로 flush되게. (부속 제외)
+  useEffect(() => {
+    if (!p.id || p.id === 'ghost' || p.parentId) return;
+    const rw = Math.round(selSize[0] * 1000), rd = Math.round(selSize[2] * 1000);
+    if (Math.abs((p.renderW ?? -1) - rw) > 1 || Math.abs((p.renderD ?? -1) - rd) > 1) {
+      usePlacedProductStore.getState().update(p.id, { renderW: rw, renderD: rd });
+    }
+  }, [selSize, p.id, p.parentId, p.renderW, p.renderD]);
+
   // 이 몸통에 부착된 도어 수 — 부착 직후에도 위치/크기 보정 효과가 돌도록 의존성에 포함.
   const childDoorCount = usePlacedProductStore((s) => s.placed.filter((d) => d.parentId === p.id).length);
 
@@ -398,6 +456,8 @@ export function ProductPlacement() {
   const tcRef = useRef<any>(null); // TransformControls 인스턴스 — 핸들 위면 .axis 설정됨
   const lastPivot = useRef<{ x: number; z: number; ry: number }>({ x: 0, z: 0, ry: 0 });
   const selectedSet = new Set(selectedIds);
+  // 도어별 최대 열림 각(충돌 시 교차 직전까지). 배치/각도 변경 시 재계산.
+  const doorClamp = useMemo(() => computeDoorClamp(placed, doorOpenDeg), [placed, doorOpenDeg]);
 
   // 선택이 바뀌면 피벗을 선택 박스들의 중심으로 재배치 (회전 0)
   useEffect(() => {
@@ -564,7 +624,7 @@ export function ProductPlacement() {
     <>
       {/* 배치된 상품 — 모델 등록 시 GLB, 없으면 박스. 빈 곳 클릭 해제는 Canvas onPointerMissed에서 처리 */}
       {placed.map((p) => (
-        <PlacedItem key={p.id} p={p} sel={selectedSet.has(p.id)} onDown={onBoxDown} doorsOpen={doorsOpen} doorOpenDeg={doorOpenDeg} />
+        <PlacedItem key={p.id} p={p} sel={selectedSet.has(p.id)} onDown={onBoxDown} doorsOpen={doorsOpen} doorOpenDeg={doorClamp.get(p.id) ?? doorOpenDeg} />
       ))}
 
       {/* 선택 중심 피벗 + 기즈모 — 다중 선택 시 전체 이동/회전 (G=이동, R=회전) */}
