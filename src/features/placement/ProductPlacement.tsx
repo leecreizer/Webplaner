@@ -1,5 +1,5 @@
 import { Component, Suspense, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
-import { Box3, DoubleSide, Group, Mesh, Object3D, Vector3 } from 'three';
+import { Box3, DoubleSide, Group, Mesh, Object3D, Quaternion, Vector3 } from 'three';
 import { useFrame } from '@react-three/fiber';
 import { Edges, TransformControls, useGLTF } from '@react-three/drei';
 import { HelperScaler, isHelperRegionName, replaceableSizeOf, pickReplaceableSize } from '@/domain/products/HelperScaler';
@@ -9,10 +9,12 @@ import { usePlacedProductStore, type PendingProduct, type PlacedProduct, type Do
 const M = 1 / 1000; // mm → m
 /** 도어를 몸통 앞면에서 앞으로 띄우는 간격(m). 5mm. */
 const DOOR_FRONT_GAP = 5 * M;
-/** 서랍(M) 슬라이드 시작 지연(초) — 도어가 먼저 열린 뒤 서랍이 나오도록. */
-const DOOR_OPEN_DELAY = 0.5;
+/** 서랍(M) 슬라이드 시작 지연(초) — 도어가 **완전히** 열린 뒤 서랍이 나오도록(도어 애니메이션 ~0.8s). */
+const DOOR_OPEN_DELAY = 0.9;
 /** 서랍이 여러 개일 때 아래→위 순차 간격(초). */
 const DRAWER_STAGGER = 0.35;
+/** 서랍 돌출량 = 깊이 × 이 비율. 2/3면 뒤 1/3이 남아 몸통을 벗어나지 않음. */
+const DRAWER_OPEN_RATIO = 2 / 3;
 
 /** 모델 로드 실패 시 박스로 폴백 */
 class ModelErrorBoundary extends Component<{ fallback: ReactNode; children: ReactNode }, { failed: boolean }> {
@@ -108,14 +110,25 @@ function FittedModel({ url, p, sel, ghost = false }: { url: string; p: PlacedPro
     const center = new Vector3(); box.getCenter(center);
 
     // 서랍(M) 슬라이드 대상 — hotspot 안의 M 노드(서브트리=서랍). **보이는(선택 사이즈) 서랍만**.
-    // 열림 시 앞(+z)으로 깊이의 3/2만큼 돌출. 여러 개면 **아래(y 작은)부터** 순서대로 열리도록 정렬.
-    const drawers: { node: Object3D; baseZ: number; offset: number; y: number }[] = [];
+    // 열림 시 **월드 앞(+z) 방향**으로 깊이의 3/2만큼 돌출. (부모에 회전이 있어도 옆으로 새지 않게
+    // 월드 +z를 부모 로컬 방향으로 변환해 이동.) 여러 개면 **아래(y 작은)부터** 순차.
+    const drawers: { node: Object3D; basePos: Vector3; dir: Vector3; offset: number; y: number }[] = [];
+    const _q = new Quaternion(); const _s = new Vector3();
     clone.traverse((o) => {
       if (!/^M\d*(_\d+)?$/i.test(o.name.trim()) || !isEffVisible(o)) return;
-      const b = new Box3().setFromObject(o);
+      const b = new Box3().setFromObject(o); // 월드(m) bbox
       const depth = isFinite(b.max.z - b.min.z) ? b.max.z - b.min.z : 0.3;
       const cy = isFinite(b.min.y + b.max.y) ? (b.min.y + b.max.y) / 2 : 0;
-      drawers.push({ node: o, baseZ: o.position.z, offset: 1.5 * (depth || 0.3), y: cy });
+      const parent = o.parent ?? o;
+      // 월드 +z를 부모 로컬 방향으로 변환(부모 회전 보정).
+      parent.getWorldQuaternion(_q);
+      const dir = new Vector3(0, 0, 1).applyQuaternion(_q.clone().invert()).normalize();
+      // ⚠ node.position은 부모 **로컬 단위**(FBX mm: 루트 scale 0.001). 월드 돌출량(m)을
+      //   부모 월드 스케일로 나눠 로컬 단위로 환산해야 실제로 그만큼 움직인다.
+      parent.getWorldScale(_s);
+      const sUniform = (Math.abs(_s.x) + Math.abs(_s.y) + Math.abs(_s.z)) / 3 || 1;
+      const offsetLocal = (DRAWER_OPEN_RATIO * (depth || 0.3)) / sUniform;
+      drawers.push({ node: o, basePos: o.position.clone(), dir, offset: offsetLocal, y: cy });
     });
     drawers.sort((a, b) => a.y - b.y); // 아래부터 1번
 
@@ -245,7 +258,8 @@ function FittedModel({ url, p, sel, ghost = false }: { url: string; p: PlacedPro
       const cur = drawerProg.current[i];
       const next = cur + (target - cur) * Math.min(1, dt * 6);
       drawerProg.current[i] = Math.abs(target - next) < 1e-4 ? target : next;
-      drawers[i].node.position.z = drawers[i].baseZ + drawers[i].offset * drawerProg.current[i];
+      const dr = drawers[i], amt = dr.offset * drawerProg.current[i];
+      dr.node.position.set(dr.basePos.x + dr.dir.x * amt, dr.basePos.y + dr.dir.y * amt, dr.basePos.z + dr.dir.z * amt);
     }
   });
 
