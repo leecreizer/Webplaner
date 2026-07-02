@@ -20,6 +20,7 @@ import {
   Vector3,
   type BufferGeometry,
   type Object3D,
+  type Texture,
 } from 'three';
 import { TeapotGeometry } from 'three/examples/jsm/geometries/TeapotGeometry.js';
 import { useGLTF, TransformControls } from '@react-three/drei';
@@ -31,6 +32,7 @@ import {
   type MaterialEdit,
   type MaterialSlot,
   type PrimitiveKind,
+  type TextureInfo,
 } from './importedModelStore';
 
 /**
@@ -100,16 +102,21 @@ function ModelBody({ model, obj: rawObj }: { model: ImportedModel; obj: Object3D
       const mats = Array.isArray(mesh.material) ? mesh.material : [mesh.material];
       const converted = mats.map((m) => {
         const std = m as MeshStandardMaterial;
+        // 이름: GLB 재질명 → 없으면 "메시명·재질N" (mat-0 같은 무의미한 라벨 방지)
+        const key = std.name && std.name.length ? std.name : `${mesh.name || '재질'}·mat${idx}`;
+        idx++;
+        // 같은 이름(=같은 논리 재질)을 쓰는 메시가 여러 개면 **동일 phys 인스턴스를 재사용**.
+        // 각자 새로 변환하면 matMap 에 없는 사본이 생겨 편집이 첫 메시에만 적용되던 버그.
+        const existing = matMap.get(key);
+        if (existing) return existing;
         // ⚠️ MeshPhysicalMaterial.copy(standard) 는 Standard 에 없는 Vector2(clearcoatNormalScale
         // 등)를 읽다 crash → 안전하게 공통 PBR 속성만 수동 이전.
         const phys = standardToPhysical(std);
-        const key = std.name && std.name.length ? std.name : `mat-${idx}`;
-        idx++;
-        if (!matMap.has(key)) {
-          matMap.set(key, phys);
-          slots.push({
+        matMap.set(key, phys);
+        slots.push({
             key,
             name: key,
+            textures: collectTextureInfo(phys),
             original: {
               color: '#' + phys.color.getHexString(),
               roughness: phys.roughness,
@@ -122,9 +129,8 @@ function ModelBody({ model, obj: rawObj }: { model: ImportedModel; obj: Object3D
               ior: phys.ior ?? 1.5,
               clearcoat: phys.clearcoat ?? 0,
               clearcoatRoughness: phys.clearcoatRoughness ?? 0,
-            },
-          });
-        }
+          },
+        });
         return phys;
       });
       mesh.material = Array.isArray(mesh.material) ? converted : converted[0];
@@ -235,6 +241,34 @@ function ModelBody({ model, obj: rawObj }: { model: ImportedModel; obj: Object3D
  * MeshPhysicalMaterial.copy() 는 source 에 physical-only Vector2 속성이 없으면 crash 하므로
  * 공통 PBR 속성만 수동 이전한다 (맵은 참조 공유 — 텍스처 메모리 절약).
  */
+
+/** 재질의 텍스처 맵 슬롯 → 한글 라벨. */
+const TEXTURE_KINDS: [keyof MeshPhysicalMaterial, string][] = [
+  ['map', '베이스색'],
+  ['normalMap', '노멀'],
+  ['roughnessMap', '거칠기'],
+  ['metalnessMap', '금속성'],
+  ['aoMap', 'AO'],
+  ['emissiveMap', '발광'],
+  ['alphaMap', '알파'],
+  ['displacementMap', '변위'],
+];
+
+/** 재질이 참조하는 텍스처 정보 수집 (Inspector 표시용). */
+function collectTextureInfo(mat: MeshPhysicalMaterial): TextureInfo[] {
+  const out: TextureInfo[] = [];
+  for (const [prop, kind] of TEXTURE_KINDS) {
+    const tex = mat[prop] as Texture | null;
+    if (!tex) continue;
+    const img = tex.image as { width?: number; height?: number } | undefined;
+    out.push({
+      kind,
+      name: tex.name && tex.name.length ? tex.name : `(무명 ${tex.uuid.slice(0, 8)})`,
+      size: img?.width && img?.height ? `${img.width}×${img.height}` : undefined,
+    });
+  }
+  return out;
+}
 
 /** primitive 종류 → geometry. 인테리어 스케일(~0.5m). */
 function buildPrimitiveGeometry(kind: PrimitiveKind): BufferGeometry {

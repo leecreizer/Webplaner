@@ -237,28 +237,29 @@ export interface LightingState {
 }
 
 const DEFAULTS = {
-  azimuth: 30,
-  elevation: 55,
+  // 스크린샷 기준 사용자 확정값(2026-07-02)으로 초기화
+  azimuth: 0,
+  elevation: 41,
   distance: 18,
   // 햇빛 강도 — 간접광을 줄였으므로 직사광을 강화해 들어오는 곳은 밝게, 안 들어오는 곳은
   // (폐쇄 공간) 어둡게 대비를 줌.
-  intensity: 2.5,
+  intensity: 4.5,
   // 전역 균일 ambient — 그림자와 무관하게 모든 mesh 에 들어가므로 0.15 로 낮춰 폐쇄 공간이
   // 자동으로 어두워지게 한다. 사용자가 너무 어두우면 panel 에서 높이면 됨.
   ambientIntensity: 0.15,
 
   castShadow: true,
-  shadowQuality: 'high' as ShadowQuality,
+  shadowQuality: 'ultra' as ShadowQuality,
   smaaEnabled: true,
   // 12 = 약 9cm penumbra (mapSize 4096 기준). 6 은 너무 하드해 면도날 그림자.
-  shadowSoftness: 12,
+  shadowSoftness: 0,
   // 폐쇄 공간 어둠 강화 — effectiveAmbient = ambientIntensity * (1 - 0.85*0.7) ≈ 0.06
-  shadowStrength: 0.85,
-  shadowBias: -0.0005,
-  shadowNormalBias: 0.02,
-  shadowFrustumSize: 15,
-  shadowCameraNear: 0.5,
-  shadowCameraFar: 100,
+  shadowStrength: 0.7,
+  shadowBias: 0.001,
+  shadowNormalBias: 0.05,
+  shadowFrustumSize: 3,
+  shadowCameraNear: 4.96,
+  shadowCameraFar: 18,
   shadowColor: '#000000',
 
   // HemisphereLight 도 ambient 와 동일하게 전역 균일 — 디폴트 0.2 로 낮춤. 천창/실외 효과

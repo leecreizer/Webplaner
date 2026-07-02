@@ -255,9 +255,27 @@ function MaterialSection({ modelId }: { modelId: string }) {
         style={{ ...numInputStyle, width: '100%', marginBottom: 6 }}
       >
         {slots.map((s) => (
-          <option key={s.key} value={s.key}>{s.name}</option>
+          <option key={s.key} value={s.key}>
+            {s.name}{s.textures?.length ? ` (텍스처 ${s.textures.length})` : ''}
+          </option>
         ))}
       </select>
+
+      {/* 텍스처 맵 목록 — 이 재질이 참조하는 맵 종류/이름/해상도 */}
+      {slot.textures && slot.textures.length > 0 ? (
+        <div style={{ marginBottom: 8, padding: '4px 6px', background: '#1c1c1f', borderRadius: 4, border: '1px solid #2e2e33' }}>
+          <div style={{ fontSize: 10, opacity: 0.6, marginBottom: 3 }}>텍스처 맵 · {slot.textures.length}개</div>
+          {slot.textures.map((t, i) => (
+            <div key={i} style={{ display: 'flex', gap: 6, fontSize: 10, lineHeight: '16px' }}>
+              <span style={{ color: '#7dd3fc', minWidth: 44 }}>{t.kind}</span>
+              <span style={{ flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={t.name}>{t.name}</span>
+              {t.size && <span style={{ opacity: 0.5 }}>{t.size}</span>}
+            </div>
+          ))}
+        </div>
+      ) : (
+        <div style={{ fontSize: 10, opacity: 0.4, marginBottom: 8 }}>텍스처 맵 없음 (단색 재질)</div>
+      )}
 
       {/* 프리셋 (추가 = 새 머티리얼 룩) */}
       <div style={{ fontSize: 10, opacity: 0.6, marginBottom: 2 }}>프리셋 적용</div>

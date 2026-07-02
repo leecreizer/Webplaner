@@ -24,10 +24,22 @@ export interface MaterialEdit {
   clearcoatRoughness?: number;
 }
 
+/** 머티리얼에 연결된 텍스처 맵 정보 (Inspector 표시용). */
+export interface TextureInfo {
+  /** 맵 용도 — 베이스색/노멀/거칠기 등 한글 라벨 */
+  kind: string;
+  /** 텍스처 이름 (GLB 내 이름 → 없으면 uuid 축약) */
+  name: string;
+  /** 이미지 크기 (예: "1024×1024") */
+  size?: string;
+}
+
 /** 모델 내 머티리얼 슬롯 — 자동 수집. 원본값 보존(리셋용). */
 export interface MaterialSlot {
   key: string;
   name: string;
+  /** 이 재질이 참조하는 텍스처 맵 목록. */
+  textures?: TextureInfo[];
   original: MaterialEdit;
 }
 
