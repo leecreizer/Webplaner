@@ -149,7 +149,7 @@ function BoxMesh({ p, sel }: { p: PlacedProduct; sel: boolean }) {
  * 이동시켜 형태·텍스처를 보존한다(통짜 스케일 금지). helper가 없는 모델은 기존처럼 균등 스케일 폴백.
  */
 function FittedModel({ url, p, sel, ghost = false }: { url: string; p: PlacedProduct; sel: boolean; ghost?: boolean }) {
-  const { scene } = useGLTF(url);
+  const { scene } = useGLTF(url, '/draco/');
   const { gl, camera, scene: rootScene } = useThree();
   // 고스트 첫 등장 시 셰이더를 **비동기 선컴파일** — 동기 컴파일이 첫 프레임을 수백 ms 블록하던
   // 멈춤을 제거. 컴파일 끝날 때까지 모델은 숨기고 파란 고스트 박스만 표시(즉시 피드백).
