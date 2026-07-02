@@ -70,6 +70,12 @@ export interface LightingState {
   shadowStrength: number;
   /** 그림자(=음영) 색. ambientLight의 color로 적용 — 그림자 진 영역의 색조. */
   shadowColor: string;
+  /** PCSS(contact-hardening) 소프트 그림자 — 접촉부 선명·거리 비례 부드러움. 켜면 소프트니스(radius) 대신 사용. */
+  pcssEnabled: boolean;
+  /** PCSS 페넘브라 크기 — 클수록 그림자 가장자리가 멀리서 크게 퍼짐. */
+  pcssSize: number;
+  /** PCSS 샘플 수 — 품질/노이즈 (8~32). */
+  pcssSamples: number;
 
   // ===== GI 모드 선택 =========================================
   /** Global Illumination 처리 방식. 라이팅 패널에서 단일 선택. */
@@ -171,6 +177,9 @@ export interface LightingState {
   setShadowCameraNear: (v: number) => void;
   setShadowCameraFar: (v: number) => void;
   setShadowColor: (v: string) => void;
+  setPcssEnabled: (v: boolean) => void;
+  setPcssSize: (v: number) => void;
+  setPcssSamples: (v: number) => void;
   setGiMode: (v: GIMode) => void;
   setGiIntensity: (v: number) => void;
   setGiSkyColor: (v: string) => void;
@@ -255,12 +264,15 @@ const DEFAULTS = {
   shadowSoftness: 0,
   // 폐쇄 공간 어둠 강화 — effectiveAmbient = ambientIntensity * (1 - 0.85*0.7) ≈ 0.06
   shadowStrength: 0.7,
-  shadowBias: 0.001,
-  shadowNormalBias: 0.05,
+  shadowBias: 0,
+  shadowNormalBias: 0.02,
   shadowFrustumSize: 3,
-  shadowCameraNear: 4.96,
-  shadowCameraFar: 18,
+  shadowCameraNear: 1,
+  shadowCameraFar: 20,
   shadowColor: '#000000',
+  pcssEnabled: false,
+  pcssSize: 12,
+  pcssSamples: 16,
 
   // HemisphereLight 도 ambient 와 동일하게 전역 균일 — 디폴트 0.2 로 낮춤. 천창/실외 효과
   // 필요하면 panel 에서 높임.
@@ -354,6 +366,9 @@ export const useLightingStore = create<LightingState>((set) => ({
   setShadowCameraNear: (v) => set({ shadowCameraNear: v }),
   setShadowCameraFar: (v) => set({ shadowCameraFar: v }),
   setShadowColor: (v) => set({ shadowColor: v }),
+  setPcssEnabled: (v) => set({ pcssEnabled: v }),
+  setPcssSize: (v) => set({ pcssSize: v }),
+  setPcssSamples: (v) => set({ pcssSamples: v }),
   setGiMode: (v) => set({ giMode: v }),
   setGiIntensity: (v) => set({ giIntensity: v }),
   setGiSkyColor: (v) => set({ giSkyColor: v }),

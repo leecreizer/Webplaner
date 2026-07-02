@@ -6,6 +6,7 @@ import {
   Environment,
   PerspectiveCamera,
   OrthographicCamera,
+  SoftShadows,
 } from '@react-three/drei';
 import { PCFShadowMap, ACESFilmicToneMapping, MOUSE, type PointLight } from 'three';
 import { PlanScene } from '@/features/scene/PlanScene';
@@ -137,6 +138,10 @@ export default function App({
               씌워진다. path tracer 가 이미 GI/AO/bloom-like glow 를 자체 계산하므로
               postfx 가 빠져도 시각 손실은 최소. */}
           <PostFXGate />
+          {/* PCSS(contact-hardening) — 접촉부는 선명, 멀수록 부드러운 물리 기반 페넘브라.
+              PCF radius 방식과 달리 소프트하게 해도 접촉부 틈(빛샘)이 안 생긴다.
+              path tracer 모드에선 자체 소프트 그림자가 있으므로 제외. */}
+          <PcssGate />
         </Canvas>
       </div>
     </HostProvider>
@@ -375,6 +380,16 @@ function SyncRenderer({ exposure, toneMapping }: { exposure: number; toneMapping
  * - **휠**: ZOOM
  */
 /** Path tracer 활성 시 PostFX 자동 비활성 — 두 useFrame priority 충돌 회피. */
+/** PCSS 소프트 그림자 게이트 — pcssEnabled && !pathtracer 일 때만 셰이더 패치 mount. */
+function PcssGate() {
+  const enabled = useLightingStore((s) => s.pcssEnabled);
+  const ptEnabled = useLightingStore((s) => s.pathtracerEnabled);
+  const size = useLightingStore((s) => s.pcssSize);
+  const samples = useLightingStore((s) => s.pcssSamples);
+  if (!enabled || ptEnabled) return null;
+  return <SoftShadows size={size} samples={samples} focus={0} />;
+}
+
 function PostFXGate() {
   const ptEnabled = useLightingStore((s) => s.pathtracerEnabled);
   if (ptEnabled) return null;

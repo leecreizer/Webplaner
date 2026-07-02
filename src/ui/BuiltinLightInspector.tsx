@@ -85,6 +85,17 @@ function SunInspector() {
         <NumberField label="소프트니스" value={s.shadowSoftness} min={0} max={30} step={1} onChange={s.setShadowSoftness} />
         <NumberField label="그림자 강도" value={s.shadowStrength} min={0} max={1.2} step={0.05} onChange={s.setShadowStrength} />
         <ColorField label="그림자 색" value={s.shadowColor} onChange={s.setShadowColor} />
+        {/* PCSS — 접촉부 선명 + 거리 비례 소프트 (contact-hardening). 켜면 위 소프트니스(radius) 무시 */}
+        <CheckboxField label="PCSS 소프트 그림자 (접촉부 선명)" checked={s.pcssEnabled} onChange={s.setPcssEnabled} />
+        {s.pcssEnabled && (
+          <>
+            <NumberField label="페넘브라 크기" value={s.pcssSize} min={2} max={60} step={1} onChange={s.setPcssSize} />
+            <NumberField label="샘플 수" value={s.pcssSamples} min={4} max={32} step={1} onChange={s.setPcssSamples} />
+            <div style={{ fontSize: 10, opacity: 0.5, lineHeight: 1.5 }}>
+              PCSS 사용 중엔 "소프트니스" 슬라이더는 무시됩니다. 접촉부가 선명해 틈(빛샘)이 생기지 않습니다.
+            </div>
+          </>
+        )}
       </Section>
       <Section title="그림자 정밀도 (offset / 계단)">
         <NumberField
