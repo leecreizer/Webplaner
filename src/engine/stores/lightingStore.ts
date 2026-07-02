@@ -258,7 +258,7 @@ const DEFAULTS = {
   ambientIntensity: 0.15,
 
   castShadow: true,
-  shadowQuality: 'ultra' as ShadowQuality,
+  shadowQuality: 'high' as ShadowQuality, // ultra(8192)는 fill 비용 4배 — 필요 시 패널에서
   smaaEnabled: true,
   // 12 = 약 9cm penumbra (mapSize 4096 기준). 6 은 너무 하드해 면도날 그림자.
   shadowSoftness: 0,

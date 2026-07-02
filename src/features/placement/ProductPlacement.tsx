@@ -1,7 +1,8 @@
 import { Component, Suspense, memo, useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { Box3, DoubleSide, Group, Mesh, MeshStandardMaterial, Object3D, Quaternion, Vector3 } from 'three';
 import { standardToPhysical } from '@/domain/materials/standardToPhysical';
-import { useFrame } from '@react-three/fiber';
+import { useFrame, useThree } from '@react-three/fiber';
+import { requestShadowUpdate } from '@/engine/lighting/ShadowDemand';
 import { Edges, TransformControls, useGLTF } from '@react-three/drei';
 import { HelperScaler, isHelperRegionName, replaceableSizeOf, pickReplaceableSize } from '@/domain/products/HelperScaler';
 import { readDpTypes, readDoorSlots } from '@/domain/products/ModelMarkers';
@@ -149,6 +150,11 @@ function BoxMesh({ p, sel }: { p: PlacedProduct; sel: boolean }) {
  */
 function FittedModel({ url, p, sel, ghost = false }: { url: string; p: PlacedProduct; sel: boolean; ghost?: boolean }) {
   const { scene } = useGLTF(url);
+  const { gl, camera, scene: rootScene } = useThree();
+  // 고스트 첫 등장 시 셰이더를 **비동기 선컴파일** — 동기 컴파일이 첫 프레임을 수백 ms 블록하던
+  // 멈춤을 제거. 컴파일 끝날 때까지 모델은 숨기고 파란 고스트 박스만 표시(즉시 피드백).
+  // 이후 실제 배치는 프로그램/텍스처 캐시를 재사용하므로 빠르다.
+  const [compiled, setCompiled] = useState(!ghost);
   const { obj, scale, pos, dpTypes, doorSlots, selSize, bodyCx, bodyCz, bodyMinY, drawers } = useMemo(() => {
     // 노드 트리만 clone — geometry 는 useGLTF 캐시와 **참조 공유**(Object3D.clone 기본 동작).
     // 정점을 실제로 변형할 메시만 아래에서 선별 복제한다. (전 메시 geometry.clone() 이
@@ -305,6 +311,21 @@ function FittedModel({ url, p, sel, ghost = false }: { url: string; p: PlacedPro
     };
   }, [scene, p.w, p.d, p.h, p.lift]);
 
+  // ghost 모델 비동기 선컴파일 (KHR_parallel_shader_compile 활용). 실패해도 그냥 표시.
+  useEffect(() => {
+    if (!ghost) return;
+    let cancelled = false;
+    setCompiled(false);
+    const anyGl = gl as unknown as {
+      compileAsync?: (o: Object3D, cam: unknown, scn: unknown) => Promise<unknown>;
+    };
+    if (typeof anyGl.compileAsync !== 'function') { setCompiled(true); return; }
+    anyGl.compileAsync(obj, camera, rootScene)
+      .then(() => { if (!cancelled) setCompiled(true); })
+      .catch(() => { if (!cancelled) setCompiled(true); });
+    return () => { cancelled = true; };
+  }, [ghost, obj, gl, camera, rootScene]);
+
   // 인스턴스 전용 리소스 정리 — obj 교체(치수 변경 등)·unmount 시 dispose.
   // geometry 는 __ownGeometry(변형용 인스턴스 복제)만 — 나머지는 useGLTF 캐시와 공유라 지우면 안 됨.
   // 재질은 항상 인스턴스 전용(standardToPhysical 신규 생성) → 전부 dispose (공유 텍스처는 유지됨).
@@ -414,12 +435,13 @@ function FittedModel({ url, p, sel, ghost = false }: { url: string; p: PlacedPro
       drawerProg.current[i] = Math.abs(target - next) < 1e-4 ? target : next;
       const dr = drawers[i], amt = dr.offset * drawerProg.current[i];
       dr.node.position.set(dr.basePos.x + dr.dir.x * amt, dr.basePos.y + dr.dir.y * amt, dr.basePos.z + dr.dir.z * amt);
+      if (cur !== drawerProg.current[i]) requestShadowUpdate(); // 서랍 이동 중 섀도맵 갱신
     }
   });
 
   return (
     <group>
-      <primitive object={obj} scale={scale} position={pos} />
+      <primitive object={obj} scale={scale} position={pos} visible={compiled} />
       {sel && (
         <mesh position={[0, (p.lift ?? 0) * M + selSize[1] / 2, 0]}>
           <boxGeometry args={selSize} />
@@ -454,6 +476,7 @@ const PlacedItem = memo(function PlacedItem({ p, sel, onDown, doorsOpen, doorOpe
     if (!isDoor || !hingeRef.current) return;
     const target = doorsOpen ? openTarget : 0;
     const a = angleRef.current + (target - angleRef.current) * Math.min(1, dt * 6); // 부드럽게 수렴
+    if (angleRef.current !== a) requestShadowUpdate(); // 도어 회전 중 섀도맵 갱신
     angleRef.current = Math.abs(target - a) < 1e-4 ? target : a;
     hingeRef.current.rotation.y = angleRef.current;
   });

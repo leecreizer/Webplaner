@@ -9,6 +9,7 @@ import {
   SoftShadows,
 } from '@react-three/drei';
 import { PCFShadowMap, ACESFilmicToneMapping, MOUSE, type PointLight } from 'three';
+import { ShadowDemand } from '@/engine/lighting/ShadowDemand';
 import { PlanScene } from '@/features/scene/PlanScene';
 import { WallDrawingTool } from '@/features/drawing/WallDrawingTool';
 import {
@@ -113,6 +114,8 @@ export default function App({
           <DynamicSky />
           <SceneCamera />
           <SceneLights />
+          {/* 섀도맵 demand 렌더링 — 변화 있을 때만 재렌더 (드래그 끊김 해소) */}
+          <ShadowDemand />
           <SceneEnvironment />
           <RendererSettings />
           <SceneGrid />
