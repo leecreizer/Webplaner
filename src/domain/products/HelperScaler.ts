@@ -278,19 +278,53 @@ function findByName(root: Object3D, name: string): Object3D | null {
   return found;
 }
 
-/** 대상 메시들의 정점 중 영역 box(world) 안에 드는 (mesh, index) 수집. */
+/**
+ * 월드 행렬이 축 정렬(회전이 0° 또는 90° 배수 + 스케일/이동)인지.
+ * 이 경우 AABB 를 역행렬로 변환해도 정확한 AABB 가 유지된다 → 정점별 행렬곱 없이 raw 좌표 비교 가능.
+ */
+function isAxisPermutation(m: { elements: number[] }): boolean {
+  const e = m.elements; // column-major 4x4
+  for (const col of [0, 4, 8]) {
+    let nonZero = 0;
+    for (let r = 0; r < 3; r++) if (Math.abs(e[col + r]) > 1e-6) nonZero++;
+    if (nonZero !== 1) return false;
+  }
+  return true;
+}
+
+/**
+ * 대상 메시들의 정점 중 영역 box(world) 안에 드는 (mesh, index) 수집.
+ *
+ * 성능: 정점마다 localToWorld(행렬곱) 하던 것을, 월드 행렬이 축 정렬인 메시(FBX→GLB 변환
+ * 산출물의 일반형)는 **box 를 메시 로컬로 1회 역변환** 후 raw 좌표 비교로 대체 — 무거운
+ * 모델에서 배치 시 100ms+ 걸리던 build 를 수 ms 로 줄인다. 축 정렬이 아니면 기존 경로 유지.
+ */
 function collectVertices(meshes: Mesh[], box: Box3): VertRef[] {
   const out: VertRef[] = [];
   const world = new Vector3();
+  const localBox = new Box3();
   for (const mesh of meshes) {
     const attr = mesh.geometry.getAttribute('position') as
       | BufferAttribute
       | undefined;
     if (!attr) continue;
-    for (let i = 0; i < attr.count; i++) {
-      world.set(attr.getX(i), attr.getY(i), attr.getZ(i));
-      mesh.localToWorld(world);
-      if (box.containsPoint(world)) out.push({ mesh, index: i });
+    if (isAxisPermutation(mesh.matrixWorld)) {
+      // 빠른 경로: box 를 로컬 공간으로 역변환(축 정렬이라 정확) 후 raw 좌표 비교
+      localBox.copy(box).applyMatrix4(mesh.matrixWorld.clone().invert());
+      const { min, max } = localBox;
+      for (let i = 0; i < attr.count; i++) {
+        const x = attr.getX(i), y = attr.getY(i), z = attr.getZ(i);
+        if (x >= min.x && x <= max.x && y >= min.y && y <= max.y && z >= min.z && z <= max.z) {
+          out.push({ mesh, index: i });
+        }
+      }
+    } else {
+      // 일반 경로: 정점별 월드 변환 (회전 포함 모델)
+      for (let i = 0; i < attr.count; i++) {
+        world.set(attr.getX(i), attr.getY(i), attr.getZ(i));
+        mesh.localToWorld(world);
+        if (box.containsPoint(world)) out.push({ mesh, index: i });
+      }
     }
   }
   return out;

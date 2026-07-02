@@ -321,7 +321,25 @@ function FittedModel({ url, p, sel, ghost = false }: { url: string; p: PlacedPro
     };
     if (typeof anyGl.compileAsync !== 'function') { setCompiled(true); return; }
     anyGl.compileAsync(obj, camera, rootScene)
-      .then(() => { if (!cancelled) setCompiled(true); })
+      .then(() => {
+        if (cancelled) return;
+        // 텍스처 GPU 업로드 프리워밍 — compileAsync 는 셰이더만 컴파일하고 텍스처는
+        // 첫 표시 프레임에 동기 업로드(밉맵 포함)돼 "모델 나타날 때" 프리즈를 만든다.
+        // initTexture 로 표시 전 미리 업로드.
+        obj.traverse((o) => {
+          const mesh = o as Mesh;
+          if (!mesh.isMesh) return;
+          const mats = Array.isArray(mesh.material) ? mesh.material : [mesh.material];
+          for (const m of mats) {
+            const rec = m as unknown as Record<string, { isTexture?: boolean } | null>;
+            for (const k of ['map', 'normalMap', 'roughnessMap', 'metalnessMap', 'aoMap', 'emissiveMap', 'alphaMap']) {
+              const t = rec[k];
+              if (t && t.isTexture) gl.initTexture(t as unknown as Parameters<typeof gl.initTexture>[0]);
+            }
+          }
+        });
+        setCompiled(true);
+      })
       .catch(() => { if (!cancelled) setCompiled(true); });
     return () => { cancelled = true; };
   }, [ghost, obj, gl, camera, rootScene]);
