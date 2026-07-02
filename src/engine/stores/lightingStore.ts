@@ -300,7 +300,7 @@ const DEFAULTS = {
   toneMapping: 'aces' as ToneMappingMode,
   toneMappingExposure: 1.0,
 
-  bloomEnabled: true,
+  bloomEnabled: false, // 기본 OFF — 필요 시 패널에서 켜고 강도 조절
   bloomIntensity: 0.35,
 
   // SSR — 래스터 모델↔모델 반사. 성능 비용이 있어 기본 OFF. 조명 패널에서 토글.
