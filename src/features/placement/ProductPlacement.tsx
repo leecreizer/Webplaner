@@ -150,11 +150,12 @@ function BoxMesh({ p, sel }: { p: PlacedProduct; sel: boolean }) {
 function FittedModel({ url, p, sel, ghost = false }: { url: string; p: PlacedProduct; sel: boolean; ghost?: boolean }) {
   const { scene } = useGLTF(url);
   const { obj, scale, pos, dpTypes, doorSlots, selSize, bodyCx, bodyCz, bodyMinY, drawers } = useMemo(() => {
-    // useGLTF 공유 geometry 보호 — 인스턴스 전용 deep clone 후 변형.
+    // 노드 트리만 clone — geometry 는 useGLTF 캐시와 **참조 공유**(Object3D.clone 기본 동작).
+    // 정점을 실제로 변형할 메시만 아래에서 선별 복제한다. (전 메시 geometry.clone() 이
+    // 배치 순간 수백 ms 멈춤의 주범이었다.)
     const clone = scene.clone(true);
     clone.traverse((o) => {
       if (o instanceof Mesh) {
-        o.geometry = o.geometry.clone();
         // 기본 도형(BoxMesh)처럼 그림자를 주고받게 — GLB 메시는 기본값이 false라 조명/그림자/AO가
         // 안 먹는 것처럼 보인다. 그림자 캐스팅+수신 켜서 실시간 렌더 환경요소를 동일 적용.
         o.castShadow = true;
@@ -170,6 +171,14 @@ function FittedModel({ url, p, sel, ghost = false }: { url: string; p: PlacedPro
 
     const scaler = HelperScaler.build(clone);
     const useHelper = scaler.regionCount > 0;
+    // 변형(정점 이동) 대상 메시만 geometry 를 인스턴스 전용으로 복제 — 공유 캐시 오염 방지.
+    // __ownGeometry 마킹은 unmount dispose 가 공유 geometry 를 지우지 않게 하는 기준.
+    if (useHelper) {
+      for (const m of scaler.mutatedMeshes) {
+        m.geometry = m.geometry.clone();
+        m.userData.__ownGeometry = true;
+      }
+    }
     if (typeof window !== 'undefined' && (window as unknown as { __HELPER_DEBUG__?: boolean }).__HELPER_DEBUG__) {
       const names: string[] = [];
       clone.traverse((o) => { if ((o as { isMesh?: boolean }).isMesh) names.push(o.name || '(unnamed)'); });
@@ -296,14 +305,15 @@ function FittedModel({ url, p, sel, ghost = false }: { url: string; p: PlacedPro
     };
   }, [scene, p.w, p.d, p.h, p.lift]);
 
-  // 인스턴스 전용 clone(geometry·physical 재질) 정리 — obj 교체(치수 변경 등)·unmount 시 dispose.
-  // geometry/material dispose 는 공유 텍스처를 해제하지 않으므로 안전.
+  // 인스턴스 전용 리소스 정리 — obj 교체(치수 변경 등)·unmount 시 dispose.
+  // geometry 는 __ownGeometry(변형용 인스턴스 복제)만 — 나머지는 useGLTF 캐시와 공유라 지우면 안 됨.
+  // 재질은 항상 인스턴스 전용(standardToPhysical 신규 생성) → 전부 dispose (공유 텍스처는 유지됨).
   useEffect(() => {
     return () => {
       obj.traverse((o) => {
         const mesh = o as Mesh;
         if (!mesh.isMesh) return;
-        mesh.geometry?.dispose();
+        if (mesh.userData.__ownGeometry) mesh.geometry?.dispose();
         const mats = Array.isArray(mesh.material) ? mesh.material : [mesh.material];
         for (const m of mats) m?.dispose();
       });

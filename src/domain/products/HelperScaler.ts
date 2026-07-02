@@ -38,6 +38,19 @@ export class HelperScaler {
     return this.regions.length;
   }
 
+  /**
+   * applyResize 가 정점을 실제로 변형하게 될 메시 집합.
+   * 호출자가 **이 메시들만** geometry.clone() 하면 공유 캐시 오염 없이 변형 가능 —
+   * 전체 메시를 무조건 깊은 복제하던 비용(배치 시 멈춤)을 제거한다.
+   * (applyResize 는 apply 시점에 mesh.geometry 를 다시 읽으므로, build 이후에
+   *  geometry 를 교체해도 정점 인덱스가 동일해 안전하다.)
+   */
+  get mutatedMeshes(): Mesh[] {
+    const set = new Set<Mesh>();
+    for (const r of this.regions) for (const v of r.verts) set.add(v.mesh);
+    return [...set];
+  }
+
   /** 진단용 — 빌드 결과(원본 치수, 영역별 축/방향/캡처 정점 수/박스 범위)를 반환. */
   getDiagnostics(): {
     origSize: { x: number; y: number; z: number };
