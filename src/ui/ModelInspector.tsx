@@ -155,7 +155,7 @@ function Vec3({
             type="number"
             value={Number(value[i].toFixed(2))}
             step={step}
-            onChange={(e) => onChange(i as 0 | 1 | 2, parseFloat(e.target.value) || 0)}
+            onChange={(e) => { const v = parseFloat(e.target.value); if (!Number.isNaN(v)) onChange(i as 0 | 1 | 2, v); }}
             style={{ ...numInputStyle, width: '100%' }}
           />
         </label>
@@ -195,7 +195,7 @@ function NumberRow({
         type="number"
         value={Number(value.toFixed(2))}
         step={step}
-        onChange={(e) => onChange(parseFloat(e.target.value) || 0)}
+        onChange={(e) => { const v = parseFloat(e.target.value); if (!Number.isNaN(v)) onChange(v); }}
         style={numInputStyle}
       />
     </label>

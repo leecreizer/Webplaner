@@ -205,7 +205,7 @@ function NumberField({
       <input
         type="number"
         value={value}
-        onChange={(e) => onChange(parseFloat(e.target.value) || 0)}
+        onChange={(e) => { const v = parseFloat(e.target.value); if (!Number.isNaN(v)) onChange(v); }}
         step={step}
         style={numInputStyle}
       />

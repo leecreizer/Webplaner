@@ -229,7 +229,7 @@ function NumberField({
       <input
         type="number"
         value={value}
-        onChange={(e) => onChange(parseFloat(e.target.value) || 0)}
+        onChange={(e) => { const v = parseFloat(e.target.value); if (!Number.isNaN(v)) onChange(v); }}
         step={step}
         style={numInputStyle}
       />
@@ -307,7 +307,7 @@ function Vec3Field({
               type="number"
               value={value[i]}
               step={0.1}
-              onChange={(e) => onChange(i as 0 | 1 | 2, parseFloat(e.target.value) || 0)}
+              onChange={(e) => { const v = parseFloat(e.target.value); if (!Number.isNaN(v)) onChange(i as 0 | 1 | 2, v); }}
               style={{ ...numInputStyle, width: '100%' }}
             />
           </label>

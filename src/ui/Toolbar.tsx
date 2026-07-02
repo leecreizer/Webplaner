@@ -202,7 +202,7 @@ function DoorControls() {
         min={-180}
         max={180}
         step={5}
-        onChange={(e) => setDeg(parseFloat(e.target.value) || 0)}
+        onChange={(e) => { const v = parseFloat(e.target.value); if (!Number.isNaN(v)) setDeg(v); }}
         style={{ width: 52, background: '#1f2430', color: '#e6e6e6', border: '1px solid #3a4150', borderRadius: 4, padding: '2px 4px', fontSize: 12 }}
         title="도어 열림 각도(도). 음수면 반대 방향."
       />
