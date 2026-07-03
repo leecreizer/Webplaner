@@ -15,6 +15,9 @@ import { BearingType } from '@/domain/structures/Wall';
 import type { Wall } from '@/domain/structures/Wall';
 import type { Space } from '@/domain/structures/Space';
 import type { ProductInfo } from '@/domain/products/ProductInfo';
+import { useSpaceModuleStore } from '@/features/spaceModules/spaceModuleStore';
+import { isModuleWall } from '@/features/spaceModules/syncModuleWalls';
+import { modulesToSaveData } from '@/features/spaceModules/serialization';
 
 /**
  * 현재 평면도 상태 + 카메라 상태 → `RenderPlanSaveData` JSON DTO 빌더.
@@ -88,19 +91,29 @@ export function buildCameraData(
 export function buildPlanData(): PlanSaveData {
   const { nodes, walls, spaces } = useLayoutStore.getState();
 
-  const Nodes: NodeData[] = nodes.map((n) => ({
-    nodeIndex: n.nodeIndex,
-    position: vector3ToVectorData(n.position),
-  }));
+  // 모듈발 벽(그린 벽 아님)은 로드 시 syncModuleWalls()가 spaceModules로부터 재생성하므로
+  // 저장 대상에서 제외한다 — 안 그러면 로드 때 중복 생성된다.
+  const nonModuleWalls = walls.filter((w) => !isModuleWall(w));
+  const nonModuleWallSet = new Set(nonModuleWalls);
 
-  const Walls: WallData[] = walls.map(wallToData);
+  // 모듈 벽에만 연결되어 저장 시 참조할 곳이 없어지는 orphan 노드도 함께 제외한다.
+  const Nodes: NodeData[] = nodes
+    .filter((n) => n.walls.some((w) => nonModuleWallSet.has(w)))
+    .map((n) => ({
+      nodeIndex: n.nodeIndex,
+      position: vector3ToVectorData(n.position),
+    }));
+
+  const Walls: WallData[] = nonModuleWalls.map(wallToData);
 
   const Spaces: SpaceData[] = spaces.map(spaceToData);
 
   // OrphanProducts — 아직 SpaceEmpty 개념 미포팅이라 빈 배열
   const OrphanProducts: ProductData[] = [];
 
-  return { Nodes, Walls, Spaces, OrphanProducts };
+  const spaceModules = modulesToSaveData(useSpaceModuleStore.getState().modules);
+
+  return { Nodes, Walls, Spaces, OrphanProducts, spaceModules };
 }
 
 // ============================================================

@@ -2,6 +2,9 @@ import type { ICommand } from '../ICommand';
 import type { PlanSaveData } from '@/persistence/PlanSaveData';
 import { buildPlanData } from '@/networking/RenderPlanBuilder';
 import { SpaceManager } from '@/domain/layout/SpaceManager';
+import { useSpaceModuleStore } from '@/features/spaceModules/spaceModuleStore';
+import { syncModuleWalls } from '@/features/spaceModules/syncModuleWalls';
+import { modulesFromSaveData } from '@/features/spaceModules/serialization';
 
 /**
  * 플랜 불러오기 커맨드.
@@ -61,6 +64,10 @@ export class LoadPlanCommand implements ICommand {
     const _parsed: PlanSaveData = typeof plan === 'string' ? JSON.parse(plan) : plan;
     // TODO(port): _parsed.Nodes → Node.create, _parsed.Walls → Wall.create, _parsed.Spaces → ...
     // 본 stub은 의도적으로 비어있다 — Tasks 모듈 포팅 후 채워진다.
-    void _parsed;
+
+    // 공간 모듈은 별도 스토어이므로 Nodes/Walls 포팅 여부와 무관하게 복원 가능하다.
+    // syncModuleWalls()가 모듈발 벽을 재생성한다 — 저장 시 모듈발 벽은 직렬화에서 제외되어 있다.
+    useSpaceModuleStore.setState({ modules: modulesFromSaveData(_parsed.spaceModules) });
+    syncModuleWalls();
   }
 }

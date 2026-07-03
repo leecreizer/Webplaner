@@ -15,6 +15,36 @@ export interface PlanSaveData {
    * 구버전 저장 파일과의 호환을 위해 null/undefined일 수 있다 — 로드 측에서 null 체크 필수.
    */
   OrphanProducts?: ProductData[] | null;
+  /** 공간 모듈 목록 (선택 — 구버전 데이터 하위 호환). */
+  spaceModules?: SpaceModuleData[];
+}
+
+/**
+ * 파라메트릭 공간 모듈({@link SpaceModule})의 저장 DTO.
+ * 모듈발 벽(`isModuleWall`)은 로드 시 `syncModuleWalls()`가 재생성하므로 별도 저장하지 않는다.
+ */
+export interface SpaceModuleData {
+  id: string;
+  kind: string;
+  name: string;
+  x: number;
+  z: number;
+  ry: number;
+  w: number;
+  d: number;
+  wallH: number;
+  openings: SpaceModuleOpeningData[];
+}
+
+/** {@link SpaceModuleData}의 개구부(문/오프닝) 저장 DTO. */
+export interface SpaceModuleOpeningData {
+  id: string;
+  side: string;
+  type: string;
+  offset: number;
+  width: number;
+  height: number;
+  suppressedBy?: string;
 }
 
 /**
