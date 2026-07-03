@@ -6,6 +6,7 @@ import {
   type ModuleOpening,
 } from '@/features/spaceModules/spaceModuleStore';
 import { DraggablePanel } from '@/ui/panels/DraggablePanel';
+import { useViewStore } from '@/engine/stores/viewStore';
 
 const SIDES: ModuleSide[] = ['N', 'E', 'S', 'W'];
 const ROTATIONS: (0 | 90 | 180 | 270)[] = [0, 90, 180, 270];
@@ -18,6 +19,7 @@ const ROTATIONS: (0 | 90 | 180 | 270)[] = [0, 90, 180, 270];
  * - 모듈 삭제
  */
 export function SpaceModuleInspector() {
+  const is2D = useViewStore((s) => s.viewMode === '2D');
   const modules = useSpaceModuleStore((s) => s.modules);
   const selectedId = useSpaceModuleStore((s) => s.selectedId);
   const update = useSpaceModuleStore((s) => s.update);
@@ -96,6 +98,8 @@ export function SpaceModuleInspector() {
           {ROTATIONS.map((r) => (
             <button
               key={r}
+              disabled={!is2D}
+              title={is2D ? undefined : '회전은 2D(탑뷰)에서만 가능'}
               onClick={() => useSpaceModuleStore.getState().transformModule(m.id, { ry: r })}
               style={{
                 flex: 1,

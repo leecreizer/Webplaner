@@ -22,6 +22,7 @@ export function ModulePlacement() {
   const pendingKind = useSpaceModuleStore((s) => s.pendingKind);
   const pendingOpeningType = useSpaceModuleStore((s) => s.pendingOpeningType);
   const movingOpening = useSpaceModuleStore((s) => s.movingOpening);
+  const viewMode2D = useViewStore((s) => s.viewMode === '2D');
   // 활성 부착 작업(신규 배치 or 기존 재배치)의 종류·치수 — 고스트/픽킹 공용
   const activeAttach = useMemo(() => {
     if (pendingOpeningType) {
@@ -295,8 +296,8 @@ export function ModulePlacement() {
             <Html center position={[0, 0.05, 0]} style={{ pointerEvents: 'none', fontSize: 11, color: '#334155', fontWeight: 600, textShadow: '0 0 3px #fff' }}>
               {m.name}
             </Html>
-            {/* 선택 시 회전 버튼 — 클릭당 +90° (R 키와 동일). 모듈 우상단 코너에 표시 */}
-            {sel && (
+            {/* 선택 시 회전 버튼 — 2D(탑뷰) 전용 (이동과 동일 정책). 클릭 +90°/드래그 자유회전 */}
+            {sel && viewMode2D && (
               <Html center position={[m.w / 2, 0.05, -m.d / 2]} zIndexRange={[90, 0]}>
                 <button
                   onPointerDown={(e) => {
