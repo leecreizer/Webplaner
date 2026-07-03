@@ -124,14 +124,11 @@ export function SpaceModuleInspector() {
             onRemove={() => removeOpening(m.id, o.id)}
           />
         ))}
-        <button
-          onClick={() =>
-            addOpening(m.id, { side: 'N', type: 'door', offset: m.w / 2, width: 0.9, height: 2.1 })
-          }
-          style={{ ...resetBtnStyle, width: '100%', marginTop: 4 }}
-        >
-          + 개구부 추가
-        </button>
+        {m.openings.length === 0 && (
+          <div style={{ fontSize: 10, opacity: 0.5 }}>
+            없음 — 툴바 "기본 모델링"에서 도어/창호/개구부를 골라 벽을 클릭해 배치
+          </div>
+        )}
       </Section>
 
       <button
@@ -179,15 +176,10 @@ function OpeningRow({
             </option>
           ))}
         </select>
-        <select
-          value={opening.type}
-          onChange={(e) => onChange({ type: e.target.value as ModuleOpening['type'] })}
-          style={{ ...numInputStyle, width: 60 }}
-        >
-          <option value="door">문</option>
-          <option value="opening">개구부</option>
-          <option value="window">창호</option>
-        </select>
+        {/* 종류는 툴바 배치 시 결정 — 여기선 표시만 (변경은 삭제 후 재배치) */}
+        <span style={{ fontSize: 11, padding: '2px 6px', borderRadius: 3, background: '#27272a', border: '1px solid #3f3f46' }}>
+          {opening.type === 'door' ? '문' : opening.type === 'window' ? '창호' : '개구부'}
+        </span>
         {opening.suppressedBy && (
           <span style={{ fontSize: 10, color: '#f87171' }} title={`suppressedBy: ${opening.suppressedBy}`}>
             🔇 겹침 비활성

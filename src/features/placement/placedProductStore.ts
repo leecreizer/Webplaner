@@ -14,6 +14,8 @@ export interface PendingProduct {
   h: number; // mm
   lift?: number; // 배치높이(바닥에서 띄움) mm
   modelUrl?: string; // 실제 GLB/GLTF 모델 URL (있으면 박스 대신 모델 로드)
+  /** 표시 컬러(hex) — 어드민 모델(마감) 라인 구분색. 박스 렌더 시 이 색으로 표시 */
+  color?: string;
   /** 도어 등 부속이 부착된 몸통(베이스)의 placed id. 몸통 크기 변경 시 자동 갱신 대상 판별용. */
   parentId?: string;
   /** 부착 면(L/R) — 몸통 도어 슬롯과 매칭해 크기/위치를 따라가기 위함. */
@@ -47,6 +49,8 @@ export interface DoorVariant {
   masterH?: number;
   masterD?: number;
   modelUrl?: string;
+  /** 변형 상품의 표시 컬러(hex) */
+  color?: string;
 }
 export interface PlacedProduct extends PendingProduct {
   id: string;

@@ -26,6 +26,8 @@ export function ModulePlacement() {
     moduleId: string; side: 'N'|'E'|'S'|'W'; offset: number;
     x: number; z: number; rotY: number;
   } | null>(null);
+  // 부착 모드에서 마우스를 따라다니는 커서 위치(바닥 교점) — 벽 스냅 전에도 고스트 표시
+  const [attachCursor, setAttachCursor] = useState<[number, number] | null>(null);
   // 드래그 중인 모듈의 "잡은 지점 - 모듈 중심" 오프셋. null이면 드래그 아님.
   const dragRef = useRef<{ id: string; offX: number; offZ: number } | null>(null);
 
@@ -60,7 +62,7 @@ export function ModulePlacement() {
   // 개구부 부착 모드 — canvas 캡처 단계에서 직접 레이캐스트 (벽 stopPropagation 우회).
   // 바닥(y=0) 평면과의 교점을 구해 가장 가까운 모듈 벽면에 스냅한다.
   useEffect(() => {
-    if (!pendingOpeningType) { setAttachHover(null); return; }
+    if (!pendingOpeningType) { setAttachHover(null); setAttachCursor(null); return; }
     const el = gl.domElement;
     const ray = new Raycaster();
     const ndc = new Vector2();
@@ -79,7 +81,14 @@ export function ModulePlacement() {
       return findWallAttach(hitPt.x, hitPt.z, pendingOpeningType);
     };
 
-    const onMove = (ev: PointerEvent) => { setAttachHover(pick(ev)); };
+    const onMove = (ev: PointerEvent) => {
+      setAttachHover(pick(ev));
+      // 바닥 교점은 항상 추적 — 벽에서 멀어도 고스트가 마우스에 붙어 다니게
+      const r = el.getBoundingClientRect();
+      ndc.set(((ev.clientX - r.left) / r.width) * 2 - 1, -(((ev.clientY - r.top) / r.height) * 2 - 1));
+      ray.setFromCamera(ndc, camera);
+      setAttachCursor(ray.ray.intersectPlane(ground, hitPt) ? [hitPt.x, hitPt.z] : null);
+    };
     const onDown = (ev: PointerEvent) => {
       if (ev.button !== 0) return;
       const hit = pick(ev);
@@ -96,6 +105,7 @@ export function ModulePlacement() {
       });
       st.setPendingOpeningType(null);
       setAttachHover(null);
+      setAttachCursor(null);
     };
 
     el.addEventListener('pointermove', onMove, { capture: true });
@@ -111,13 +121,20 @@ export function ModulePlacement() {
       <OpeningMarkers />
       {/* 개구부 부착 미리보기 — 이벤트는 아래 캡처 리스너(useEffect)가 처리 (벽/바닥
           메시의 stopPropagation 에 막히지 않도록 r3f 이벤트를 우회) */}
-      {pendingOpeningType && attachHover && (() => {
+      {pendingOpeningType && (attachHover || attachCursor) && (() => {
         const d = OPENING_DEFAULTS[pendingOpeningType];
         const y = (pendingOpeningType === 'window' ? (d.sill ?? 0.9) : 0) + d.height / 2;
+        // 벽 근처면 벽면 스냅 위치·방향, 아니면 마우스(바닥 교점)에 붙어 따라다님
+        const px = attachHover ? attachHover.x : attachCursor![0];
+        const pz = attachHover ? attachHover.z : attachCursor![1];
+        const rotY = attachHover ? attachHover.rotY : 0;
         return (
-          <mesh position={[attachHover.x, y, attachHover.z]} rotation={[0, attachHover.rotY, 0]}>
+          <mesh position={[px, y, pz]} rotation={[0, rotY, 0]}>
             <boxGeometry args={[d.width, d.height, 0.1]} />
-            <meshBasicMaterial color="#a78bfa" transparent opacity={0.5} depthWrite={false} />
+            <meshBasicMaterial
+              color={attachHover ? '#a78bfa' : '#64748b'}
+              transparent opacity={attachHover ? 0.55 : 0.35} depthWrite={false}
+            />
           </mesh>
         );
       })()}
