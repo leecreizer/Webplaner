@@ -60,8 +60,11 @@ interface SpaceModuleState {
   pendingKind: ModuleKind | null;
   /** 벽 부착 대기 중인 개구부 종류 (툴바 기본 모델링 → 모듈 벽 클릭 배치). */
   pendingOpeningType: 'door'|'opening'|'window' | null;
+  /** 재배치 중인 기존 개구부 — 표식 클릭으로 집어서 같은/다른 벽에 놓는다. */
+  movingOpening: { moduleId: string; openingId: string } | null;
   setPendingKind(k: ModuleKind | null): void;
   setPendingOpeningType(t: 'door'|'opening'|'window' | null): void;
+  setMovingOpening(m: { moduleId: string; openingId: string } | null): void;
   add(kind: ModuleKind, x: number, z: number): string;
   remove(id: string): void;
   update(id: string, patch: Partial<SpaceModule>): void;
@@ -89,10 +92,13 @@ export const useSpaceModuleStore = create<SpaceModuleState>((set, get) => ({
   selectedId: null,
   pendingKind: null,
   pendingOpeningType: null,
+  movingOpening: null,
 
   setPendingKind(k) { set({ pendingKind: k }); },
 
   setPendingOpeningType(t) { set({ pendingOpeningType: t }); },
+
+  setMovingOpening(m) { set({ movingOpening: m }); },
 
   add(kind, x, z) {
     const preset = MODULE_PRESETS[kind];

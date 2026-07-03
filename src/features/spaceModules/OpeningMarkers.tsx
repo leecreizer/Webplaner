@@ -5,6 +5,7 @@ import { lastCompiled } from './syncModuleWalls';
 /** 컴파일된 벽의 문/개구부 위치에 3D 표식을 오버레이 렌더 — 벽 컷아웃은 후속 스펙. */
 export function OpeningMarkers() {
   const modules = useSpaceModuleStore((s) => s.modules);
+  const movingOpening = useSpaceModuleStore((s) => s.movingOpening);
   // syncModuleWalls 는 50ms debounce 후 lastCompiled 를 갱신하므로,
   // 모듈 변경 후 잠시 뒤 다시 렌더해 최신 컴파일 결과를 반영한다.
   const [, bump] = useState(0);
@@ -24,6 +25,8 @@ export function OpeningMarkers() {
         const ux = dx / len, uz = dz / len;
         const rotY = -Math.atan2(dz, dx);
         return wall.openings.map((op) => {
+          // 재배치를 위해 집어든 개구부는 숨김 (고스트가 대신 표시)
+          if (movingOpening && movingOpening.openingId === op.openingId) return null;
           const cx = wall.ax + ux * op.t;
           const cz = wall.az + uz * op.t;
           const isDoor = op.type === 'door';
@@ -36,7 +39,16 @@ export function OpeningMarkers() {
               position={[cx, y, cz]}
               rotation={[0, rotY, 0]}
             >
-              <mesh>
+              <mesh
+                // 표식 클릭 = 집어서 재배치 모드 (같은/다른 벽에 다시 놓기, ESC 취소)
+                onPointerDown={(e) => {
+                  if (e.button !== 0) return;
+                  const st = useSpaceModuleStore.getState();
+                  if (st.pendingOpeningType || st.movingOpening) return;
+                  e.stopPropagation();
+                  st.setMovingOpening({ moduleId: op.moduleId, openingId: op.openingId });
+                }}
+              >
                 {/* 문=갈색 박스 / 개구부=하늘색 반투명 / 창호=유리색 반투명.
                     깊이는 벽 두께(0.2m)에 맞춰 구멍 단면을 채운다 */}
                 <boxGeometry args={[op.width, op.height, isDoor ? 0.06 : 0.2]} />
