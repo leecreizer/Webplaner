@@ -99,6 +99,22 @@ describe('compileModules', () => {
     expect(shared.openings.map((o) => o.openingId)).toEqual(['o1']);
   });
 
+  it('조각 경계 개구부: 절단점 위 중심 개구부는 정확히 한 벽에만 배정', () => {
+    // m1 E변(x=1.5, z:-3~3)이 m2(z:-3~0)·m3(z:0~3) W변과 맞닿아 z=0에서 두 조각으로 절단.
+    // 개구부 중심(offset 3.0 → z=0)이 정확히 절단점에 위치 — 양쪽 조각 중복 배정 금지.
+    const m1 = mod({
+      id: 'm1', w: 3, d: 6,
+      openings: [{ id: 'o1', side: 'E', type: 'door', offset: 3.0, width: 0.9, height: 2.1 }],
+    });
+    const m2 = mod({ id: 'm2', w: 3, d: 3, x: 3, z: -1.5 });
+    const m3 = mod({ id: 'm3', w: 3, d: 3, x: 3, z: 1.5 });
+    const { walls } = compileModules([m1, m2, m3]);
+    const onLine = walls.filter((w) => Math.abs(w.ax - 1.5) < 1e-6 && Math.abs(w.bx - 1.5) < 1e-6);
+    expect(onLine).toHaveLength(2); // z:-3~0, z:0~3 두 조각
+    const total = onLine.reduce((n, w) => n + w.openings.length, 0);
+    expect(total).toBe(1);
+  });
+
   it('떨어진 모듈: 공유벽 없음 (벽 8개)', () => {
     const { walls } = compileModules([mod({ id: 'm1' }), mod({ id: 'm2', x: 10 })]);
     expect(walls.filter((w) => w.sourceModuleIds.length === 2)).toHaveLength(0);

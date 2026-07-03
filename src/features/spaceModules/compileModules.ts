@@ -49,7 +49,7 @@ function span(e: Edge) {
     : { lo: Math.min(e.az, e.bz), hi: Math.max(e.az, e.bz), fixed: e.ax, horiz: false };
 }
 
-interface Piece { lo: number; hi: number; owners: { moduleId: string; side: ModuleSide; edge: Edge }[] }
+interface Piece { lo: number; hi: number; owners: { moduleId: string; side: ModuleSide; edge: Edge }[]; isLast: boolean }
 
 export function compileModules(modules: SpaceModule[]): { walls: CompiledWall[]; conflicts: OpeningConflict[] } {
   const conflicts: OpeningConflict[] = [];
@@ -84,8 +84,9 @@ export function compileModules(modules: SpaceModule[]): { walls: CompiledWall[];
       const owners = items.filter((it) => it.lo - EPS < mid && mid < it.hi + EPS)
         .map((it) => ({ moduleId: it.moduleId, side: it.side, edge: it.edge }));
       if (owners.length === 0) continue;
-      pieces.push({ lo, hi, owners });
+      pieces.push({ lo, hi, owners, isLast: false });
     }
+    if (pieces.length > 0) pieces[pieces.length - 1].isLast = true;
 
     for (const p of pieces) {
       const ids = [...new Set(p.owners.map((o) => o.moduleId))];
@@ -109,7 +110,10 @@ export function compileModules(modules: SpaceModule[]): { walls: CompiledWall[];
             ? (o.edge.ax <= o.edge.bx ? 1 : -1)
             : (o.edge.az <= o.edge.bz ? 1 : -1);
           const centerWorld = startWorld + dir * op.offset;
-          if (centerWorld < p.lo - EPS || centerWorld > p.hi + EPS) continue; // 이 조각 밖
+          // 조각 배정은 half-open [lo, hi) — 내부 절단점에서 양쪽에 중복 배정되는 것을 방지.
+          // 그룹의 마지막 조각만 상한을 포함(hi)하여 전체 구간을 빠짐없이 커버한다.
+          if (centerWorld < p.lo - EPS) continue; // 이 조각 밖 (하한 미만)
+          if (p.isLast ? centerWorld > p.hi + EPS : centerWorld >= p.hi - EPS) continue; // 이 조각 밖 (상한)
           // suppressed 유효성: 이긴 상대가 같은 공유 조각에 실제로 있으면 제외
           if (op.suppressedBy) {
             const winnerHere = p.owners.some((ow) =>
