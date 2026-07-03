@@ -1,5 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import type { ThreeEvent } from '@react-three/fiber';
+import { useThree } from '@react-three/fiber';
+import { Plane, Raycaster, Vector2, Vector3 } from 'three';
 import { Edges, Html } from '@react-three/drei';
 import { useSpaceModuleStore, MODULE_PRESETS, OPENING_DEFAULTS } from './spaceModuleStore';
 import { moduleEdges } from './compileModules';
@@ -17,6 +19,7 @@ export function ModulePlacement() {
   const selectedId = useSpaceModuleStore((s) => s.selectedId);
   const pendingKind = useSpaceModuleStore((s) => s.pendingKind);
   const pendingOpeningType = useSpaceModuleStore((s) => s.pendingOpeningType);
+  const { camera, gl } = useThree();
   const [ghost, setGhost] = useState<[number, number] | null>(null);
   // 개구부 부착 미리보기 — 포인터 근처 모듈 벽면 위 스냅 위치
   const [attachHover, setAttachHover] = useState<{
@@ -54,38 +57,60 @@ export function ModulePlacement() {
     return () => window.removeEventListener('keydown', onKey);
   }, []);
 
+  // 개구부 부착 모드 — canvas 캡처 단계에서 직접 레이캐스트 (벽 stopPropagation 우회).
+  // 바닥(y=0) 평면과의 교점을 구해 가장 가까운 모듈 벽면에 스냅한다.
+  useEffect(() => {
+    if (!pendingOpeningType) { setAttachHover(null); return; }
+    const el = gl.domElement;
+    const ray = new Raycaster();
+    const ndc = new Vector2();
+    const ground = new Plane(new Vector3(0, 1, 0), 0);
+    const hitPt = new Vector3();
+
+    const pick = (ev: PointerEvent) => {
+      const r = el.getBoundingClientRect();
+      ndc.set(((ev.clientX - r.left) / r.width) * 2 - 1, -(((ev.clientY - r.top) / r.height) * 2 - 1));
+      ray.setFromCamera(ndc, camera);
+      // 1) 벽면 직접 클릭 — 각 모듈 변의 수직 평면과 교차 (3D 뷰에서 자연스러운 조작)
+      const face = pickWallFace(ray, pendingOpeningType);
+      if (face) return face;
+      // 2) 폴백: 바닥(y=0) 교점 근처 벽면 (탑뷰/바닥 클릭)
+      if (!ray.ray.intersectPlane(ground, hitPt)) return null;
+      return findWallAttach(hitPt.x, hitPt.z, pendingOpeningType);
+    };
+
+    const onMove = (ev: PointerEvent) => { setAttachHover(pick(ev)); };
+    const onDown = (ev: PointerEvent) => {
+      if (ev.button !== 0) return;
+      const hit = pick(ev);
+      if (!hit) return; // 벽 근처 아님 — 이벤트 통과(카메라 등 정상 동작)
+      // 캡처 단계에서 소비 — 벽/바닥 선택 등 r3f 핸들러로 전달 차단
+      ev.stopPropagation();
+      ev.preventDefault();
+      const st = useSpaceModuleStore.getState();
+      const d = OPENING_DEFAULTS[pendingOpeningType];
+      st.addOpening(hit.moduleId, {
+        side: hit.side, type: pendingOpeningType,
+        offset: hit.offset, width: d.width, height: d.height,
+        ...(d.sill !== undefined ? { sill: d.sill } : {}),
+      });
+      st.setPendingOpeningType(null);
+      setAttachHover(null);
+    };
+
+    el.addEventListener('pointermove', onMove, { capture: true });
+    el.addEventListener('pointerdown', onDown, { capture: true });
+    return () => {
+      el.removeEventListener('pointermove', onMove, { capture: true });
+      el.removeEventListener('pointerdown', onDown, { capture: true });
+    };
+  }, [pendingOpeningType, camera, gl]);
+
   return (
     <group>
       <OpeningMarkers />
-      {/* 개구부 부착 모드: 바닥 포인터 → 가장 가까운 모듈 벽면에 스냅 미리보기 + 클릭 부착 */}
-      {pendingOpeningType && (
-        <mesh
-          rotation={[-Math.PI / 2, 0, 0]}
-          position={[0, 0.001, 0]}
-          onPointerMove={(e) => {
-            e.stopPropagation();
-            setAttachHover(findWallAttach(e.point.x, e.point.z, pendingOpeningType));
-          }}
-          onPointerDown={(e) => {
-            if (e.button !== 0) return;
-            e.stopPropagation();
-            const hit = findWallAttach(e.point.x, e.point.z, pendingOpeningType);
-            if (!hit) return; // 벽 근처가 아니면 무시 (모드 유지)
-            const st = useSpaceModuleStore.getState();
-            const d = OPENING_DEFAULTS[pendingOpeningType];
-            st.addOpening(hit.moduleId, {
-              side: hit.side, type: pendingOpeningType,
-              offset: hit.offset, width: d.width, height: d.height,
-              ...(d.sill !== undefined ? { sill: d.sill } : {}),
-            });
-            st.setPendingOpeningType(null);
-            setAttachHover(null);
-          }}
-        >
-          <planeGeometry args={[200, 200]} />
-          <meshBasicMaterial visible={false} />
-        </mesh>
-      )}
+      {/* 개구부 부착 미리보기 — 이벤트는 아래 캡처 리스너(useEffect)가 처리 (벽/바닥
+          메시의 stopPropagation 에 막히지 않도록 r3f 이벤트를 우회) */}
       {pendingOpeningType && attachHover && (() => {
         const d = OPENING_DEFAULTS[pendingOpeningType];
         const y = (pendingOpeningType === 'window' ? (d.sill ?? 0.9) : 0) + d.height / 2;
@@ -177,6 +202,42 @@ export function ModulePlacement() {
   );
 }
 
+
+/**
+ * 레이가 모듈 벽면(변의 수직 평면)과 직접 교차하는지 검사 — 3D 뷰에서 벽을 바로 클릭하는
+ * 자연스러운 부착. 교차점이 벽 구간(길이×높이) 안이면 부착 정보 반환.
+ */
+function pickWallFace(ray: Raycaster, type: 'door'|'opening'|'window') {
+  const modules = useSpaceModuleStore.getState().modules;
+  const d = OPENING_DEFAULTS[type];
+  const hit = new Vector3();
+  let best: { moduleId: string; side: 'N'|'E'|'S'|'W'; offset: number; x: number; z: number; rotY: number } | null = null;
+  let bestRayDist = Infinity;
+  for (const m of modules) {
+    const edges = moduleEdges(m);
+    for (const side of ['N', 'E', 'S', 'W'] as const) {
+      const e = edges[side];
+      const dx = e.bx - e.ax, dz = e.bz - e.az;
+      const len = Math.hypot(dx, dz) || 1;
+      if (len < d.width) continue;
+      const ux = dx / len, uz = dz / len;
+      // 변을 지나는 수직 평면 (법선 = 수평 수직벡터)
+      const plane = new Plane().setFromNormalAndCoplanarPoint(
+        new Vector3(-uz, 0, ux), new Vector3(e.ax, 0, e.az));
+      if (!ray.ray.intersectPlane(plane, hit)) continue;
+      if (hit.y < -0.05 || hit.y > m.wallH + 0.1) continue; // 벽 높이 밖
+      let t = (hit.x - e.ax) * ux + (hit.z - e.az) * uz;
+      if (t < -0.1 || t > len + 0.1) continue; // 변 구간 밖
+      t = Math.max(d.width / 2, Math.min(len - d.width / 2, t));
+      const rayDist = ray.ray.origin.distanceTo(hit);
+      if (rayDist < bestRayDist) {
+        bestRayDist = rayDist;
+        best = { moduleId: m.id, side, offset: t, x: e.ax + ux * t, z: e.az + uz * t, rotY: -Math.atan2(dz, dx) };
+      }
+    }
+  }
+  return best;
+}
 
 /** 포인터(px,pz)에서 0.6m 안의 가장 가까운 모듈 벽면을 찾아 부착 정보 계산. 없으면 null. */
 function findWallAttach(px: number, pz: number, type: 'door'|'opening'|'window') {
