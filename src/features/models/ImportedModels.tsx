@@ -61,7 +61,7 @@ export function ImportedModels() {
 
 /** GLTF/GLB — useGLTF 로 로드 후 클론. */
 function GltfInstance({ model }: { model: ImportedModel }) {
-  const { scene } = useGLTF(model.url, '/draco/');
+  const { scene } = useGLTF(model.url, `${import.meta.env.BASE_URL}draco/`);
   const obj = useMemo(() => cloneSkeleton(scene) as Object3D, [scene]);
   return <ModelBody model={model} obj={obj} />;
 }

@@ -56,7 +56,7 @@ function ProductGLTF({
   rotationEulerDeg: Vector3;
   target: Vector3;
 }) {
-  const { scene } = useGLTF(url, '/draco/');
+  const { scene } = useGLTF(url, `${import.meta.env.BASE_URL}draco/`);
   const rotRad: [number, number, number] = [
     (rotationEulerDeg.x * Math.PI) / 180,
     (rotationEulerDeg.y * Math.PI) / 180,
