@@ -83,7 +83,8 @@ export function modulesFromSaveData(data: SpaceModuleData[] | undefined): SpaceM
 }
 
 /** 저장된 ry가 90° 단위가 아니면 가장 가까운 유효값으로 보정. */
-function normalizeRy(ry: number): 0 | 90 | 180 | 270 {
-  const options: Array<0 | 90 | 180 | 270> = [0, 90, 180, 270];
-  return options.includes(ry as 0 | 90 | 180 | 270) ? (ry as 0 | 90 | 180 | 270) : 0;
+function normalizeRy(ry: number): number {
+  // 자유각 지원 — [0,360) 로 정규화. 숫자가 아니면 0.
+  if (typeof ry !== 'number' || Number.isNaN(ry)) return 0;
+  return ((ry % 360) + 360) % 360;
 }

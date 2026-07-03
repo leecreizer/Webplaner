@@ -1,4 +1,5 @@
 import { create } from 'zustand';
+import { usePlacedProductStore } from '@/features/placement/placedProductStore';
 import { moduleEdges, type OpeningConflict } from './compileModules';
 
 /** 공간 모듈 종류. */
@@ -26,7 +27,8 @@ export interface SpaceModule {
   kind: ModuleKind;
   name: string;
   x: number; z: number;
-  ry: 0|90|180|270;
+  /** 회전(도, 자유각). UI 에서 5° 스냅, 45°/90° 강스냅. 축 정렬(90° 배수)일 때만 공유벽 병합. */
+  ry: number;
   /** 내벽 기준 폭×깊이(m). */
   w: number; d: number;
   wallH: number;
@@ -68,6 +70,11 @@ interface SpaceModuleState {
   add(kind: ModuleKind, x: number, z: number): string;
   remove(id: string): void;
   update(id: string, patch: Partial<SpaceModule>): void;
+  /**
+   * 이동/회전 전용 갱신 — 모듈 영역 안의 배치 상품들을 **함께** 이동·회전시킨다.
+   * (도어 등 parentId 부속은 몸통이 움직이면 기존 자동정렬이 따라오므로 몸통만 변환)
+   */
+  transformModule(id: string, patch: { x?: number; z?: number; ry?: number }): void;
   select(id: string | null): void;
   addOpening(moduleId: string, o: Omit<ModuleOpening, 'id'>): string;
   removeOpening(moduleId: string, openingId: string): void;
@@ -121,6 +128,37 @@ export const useSpaceModuleStore = create<SpaceModuleState>((set, get) => ({
 
   update(id, patch) {
     set((s) => ({ modules: s.modules.map((m) => (m.id === id ? { ...m, ...patch } : m)) }));
+  },
+
+  transformModule(id, patch) {
+    const m = get().modules.find((mm) => mm.id === id);
+    if (!m) return;
+    const nx = patch.x ?? m.x, nz = patch.z ?? m.z, nry = patch.ry ?? m.ry;
+    const dx = nx - m.x, dz = nz - m.z;
+    const dryDeg = nry - m.ry;
+    // 1) 모듈 영역(회전 반영) 안의 상품 판별 — 상품 중심을 모듈 로컬로 역회전해 AABB 검사
+    const cos0 = Math.cos((-m.ry * Math.PI) / 180), sin0 = Math.sin((-m.ry * Math.PI) / 180);
+    const inside = (px: number, pz: number) => {
+      const rx = px - m.x, rz = pz - m.z;
+      const lx = rx * cos0 - rz * sin0, lz = rx * sin0 + rz * cos0;
+      return Math.abs(lx) <= m.w / 2 + 1e-6 && Math.abs(lz) <= m.d / 2 + 1e-6;
+    };
+    const st = usePlacedProductStore.getState();
+    const dryRad = (dryDeg * Math.PI) / 180;
+    const c = Math.cos(dryRad), sn = Math.sin(dryRad);
+    for (const pr of st.placed) {
+      if (pr.parentId) continue; // 부속(도어)은 몸통 자동정렬이 따라옴
+      if (!inside(pr.x, pr.z)) continue;
+      // 모듈 중심 기준 회전 + 이동 (moduleEdges 회전 규약: (x,z)→(x·cosφ−z·sinφ, x·sinφ+z·cosφ))
+      const rx = pr.x - m.x, rz = pr.z - m.z;
+      st.update(pr.id, {
+        x: m.x + dx + rx * c - rz * sn,
+        z: m.z + dz + rx * sn + rz * c,
+        ry: pr.ry + dryDeg,
+      });
+    }
+    // 2) 모듈 자신
+    get().update(id, { x: nx, z: nz, ry: nry });
   },
 
   select(id) { set({ selectedId: id }); },

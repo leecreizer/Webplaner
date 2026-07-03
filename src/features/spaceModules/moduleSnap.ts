@@ -27,6 +27,9 @@ export function computeModuleSnap(
     if (o.id === moving.id) continue;
     for (const oe of Object.values(moduleEdges(o))) {
       for (const me of myEdges) {
+        // 대각 변(자유각 회전)은 스냅 제외 — 축 정렬 변끼리만
+        const axisAligned = (e: Edge) => Math.abs(e.az - e.bz) < 1e-4 || Math.abs(e.ax - e.bx) < 1e-4;
+        if (!axisAligned(me) || !axisAligned(oe)) continue;
         if (isH(me) !== isH(oe)) continue; // 평행 변만
         const a = span1D(me), b = span1D(oe);
         const overlap = Math.min(a.hi, b.hi) - Math.max(a.lo, b.lo);

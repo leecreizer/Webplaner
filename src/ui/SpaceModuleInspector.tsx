@@ -96,7 +96,7 @@ export function SpaceModuleInspector() {
           {ROTATIONS.map((r) => (
             <button
               key={r}
-              onClick={() => update(m.id, { ry: r })}
+              onClick={() => useSpaceModuleStore.getState().transformModule(m.id, { ry: r })}
               style={{
                 flex: 1,
                 padding: '5px 0',

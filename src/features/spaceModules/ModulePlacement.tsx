@@ -71,7 +71,7 @@ export function ModulePlacement() {
       if (!s.selectedId) return;
       const m = s.modules.find((mm) => mm.id === s.selectedId);
       if (!m) return;
-      s.update(m.id, { ry: (((m.ry + 90) % 360) as 0 | 90 | 180 | 270) });
+      s.transformModule(m.id, { ry: (m.ry + 90) % 360 }); // 상품 동반 회전
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
@@ -277,7 +277,7 @@ export function ModulePlacement() {
                 const x = e.point.x - d.offX;
                 const z = e.point.z - d.offZ;
                 const snap = computeModuleSnap(cur, x, z, s.modules);
-                s.update(d.id, { x: x + snap.dx, z: z + snap.dz });
+                s.transformModule(d.id, { x: x + snap.dx, z: z + snap.dz }); // 상품 동반 이동
               }}
               onPointerUp={(e: ThreeEvent<PointerEvent>) => {
                 if (dragRef.current?.id !== m.id) return;
@@ -299,12 +299,52 @@ export function ModulePlacement() {
             {sel && (
               <Html center position={[m.w / 2, 0.05, -m.d / 2]} zIndexRange={[90, 0]}>
                 <button
-                  onClick={(e) => {
+                  onPointerDown={(e) => {
+                    // 드래그 = 자유 회전 (5° 스냅, 45/90° 강스냅) / 짧은 클릭 = +90°
                     e.stopPropagation();
-                    const st = useSpaceModuleStore.getState();
-                    st.update(m.id, { ry: (((m.ry + 90) % 360) as 0 | 90 | 180 | 270) });
+                    e.preventDefault();
+                    const startX = e.clientX, startY = e.clientY;
+                    let moved = false;
+                    let alpha0: number | null = null;
+                    // 누적 각 — 스냅 전 원시 각도를 유지해 스냅 경계에서 튀지 않게
+                    let rawRy = useSpaceModuleStore.getState().modules.find((x) => x.id === m.id)?.ry ?? 0;
+                    const canvas = gl.domElement;
+                    const toWorld = (cx: number, cy: number) => {
+                      const r = canvas.getBoundingClientRect();
+                      const nd = new Vector2(((cx - r.left) / r.width) * 2 - 1, -(((cy - r.top) / r.height) * 2 - 1));
+                      const rc = new Raycaster();
+                      rc.setFromCamera(nd, camera);
+                      const pt = new Vector3();
+                      return rc.ray.intersectPlane(new Plane(new Vector3(0, 1, 0), 0), pt) ? pt : null;
+                    };
+                    const onMove = (ev: PointerEvent) => {
+                      if (Math.hypot(ev.clientX - startX, ev.clientY - startY) > 5) moved = true;
+                      if (!moved) return;
+                      const w = toWorld(ev.clientX, ev.clientY);
+                      if (!w) return;
+                      const cur = useSpaceModuleStore.getState().modules.find((x) => x.id === m.id);
+                      if (!cur) return;
+                      const alpha = (Math.atan2(w.z - cur.z, w.x - cur.x) * 180) / Math.PI;
+                      if (alpha0 === null) { alpha0 = alpha; return; }
+                      let dA = alpha - alpha0;
+                      if (dA > 180) dA -= 360; else if (dA < -180) dA += 360; // 랩어라운드 보정
+                      rawRy += dA;
+                      alpha0 = alpha;
+                      useSpaceModuleStore.getState().transformModule(m.id, { ry: snapAngle(rawRy) });
+                    };
+                    const onUp = () => {
+                      window.removeEventListener('pointermove', onMove);
+                      window.removeEventListener('pointerup', onUp);
+                      if (!moved) {
+                        const st = useSpaceModuleStore.getState();
+                        const cur = st.modules.find((x) => x.id === m.id);
+                        if (cur) st.transformModule(m.id, { ry: (cur.ry + 90) % 360 });
+                      }
+                    };
+                    window.addEventListener('pointermove', onMove);
+                    window.addEventListener('pointerup', onUp);
                   }}
-                  title="90° 회전 (R)"
+                  title="클릭: 90° 회전 (R) · 드래그: 자유 회전 (5°/45°/90° 스냅)"
                   style={{
                     width: 26, height: 26, borderRadius: '50%', cursor: 'pointer',
                     border: '1px solid #7c3aed', background: '#a78bfa', color: '#1e1b4b',
@@ -322,6 +362,14 @@ export function ModulePlacement() {
   );
 }
 
+
+/** 회전 각 스냅 — 45°/90° 배수 ±4° 는 강스냅, 그 외 5° 단위. [0,360). */
+export function snapAngle(deg: number): number {
+  const a = ((deg % 360) + 360) % 360;
+  const s45 = Math.round(a / 45) * 45;
+  if (Math.abs(a - s45) <= 4) return ((s45 % 360) + 360) % 360;
+  return ((Math.round(a / 5) * 5) % 360 + 360) % 360;
+}
 
 /**
  * 레이가 모듈 벽면(변의 수직 평면)과 직접 교차하는지 검사 — 3D 뷰에서 벽을 바로 클릭하는

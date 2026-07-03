@@ -23,7 +23,7 @@ describe('spaceModules serialization', () => {
       openings: [{ id: 'op-2', side: 'X', type: 'weird', offset: 0, width: 1, height: 2 }],
     }]);
     expect(restored).toEqual([{
-      id: 'sm-2', kind: 'custom', name: '기타', x: 0, z: 0, ry: 0,
+      id: 'sm-2', kind: 'custom', name: '기타', x: 0, z: 0, ry: 45, // 자유각 지원 — 45° 유지
       w: 2, d: 2, wallH: 2.4,
       openings: [{ id: 'op-2', side: 'N', type: 'opening', offset: 0, width: 1, height: 2 }],
     }]);

@@ -27,15 +27,13 @@ type Edge = { ax: number; az: number; bx: number; bz: number };
 /** 모듈 4변(월드, 시계방향 N→E→S→W). ry는 중심 기준 90° 단위 회전. */
 export function moduleEdges(m: SpaceModule): Record<ModuleSide, Edge> {
   const hw = m.w / 2, hd = m.d / 2;
-  // ry=0 로컬 코너 (시계방향: NW→NE→SE→SW), N=-z
-  let corners = [
+  // ry=0 로컬 코너 (시계방향: NW→NE→SE→SW), N=-z. 자유각 회전 지원 —
+  // 2D 회전 (x,z)→(x·cosφ−z·sinφ, x·sinφ+z·cosφ). φ=90° 일 때 (−z,x) 로 기존 90° 스텝과 동일.
+  const phi = (((m.ry % 360) + 360) % 360) * (Math.PI / 180);
+  const cosP = Math.cos(phi), sinP = Math.sin(phi);
+  const corners = [
     { x: -hw, z: -hd }, { x: hw, z: -hd }, { x: hw, z: hd }, { x: -hw, z: hd },
-  ];
-  const rot = ((m.ry % 360) + 360) % 360;
-  const times = rot / 90;
-  for (let i = 0; i < times; i++) {
-    corners = corners.map((c) => ({ x: -c.z, z: c.x })); // +90° (y축)
-  }
+  ].map((c) => ({ x: c.x * cosP - c.z * sinP, z: c.x * sinP + c.z * cosP }));
   const w = corners.map((c) => ({ x: c.x + m.x, z: c.z + m.z }));
   const edge = (a: { x: number; z: number }, b: { x: number; z: number }): Edge =>
     ({ ax: a.x, az: a.z, bx: b.x, bz: b.z });
@@ -58,13 +56,37 @@ export function compileModules(modules: SpaceModule[]): { walls: CompiledWall[];
   const walls: CompiledWall[] = [];
   const byId = new Map(modules.map((m) => [m.id, m]));
 
-  // (horiz, fixed좌표) 그룹으로 동일선상 변들을 모은다
+  // (horiz, fixed좌표) 그룹으로 동일선상 변들을 모은다.
+  // ⚠ 자유각 회전 모듈의 **대각 변**은 축 정렬 병합 대상이 아니므로 그룹핑을 건너뛰고
+  //   단독 벽으로 즉시 산출한다 (공유벽/충돌 로직은 축 정렬 변끼리만).
   type Item = { moduleId: string; side: ModuleSide; edge: Edge; lo: number; hi: number };
   const groups = new Map<string, Item[]>();
   for (const m of modules) {
     const edges = moduleEdges(m);
     for (const side of ['N', 'E', 'S', 'W'] as ModuleSide[]) {
       const e = edges[side];
+      const isH = Math.abs(e.az - e.bz) < EPS;
+      const isV = Math.abs(e.ax - e.bx) < EPS;
+      if (!isH && !isV) {
+        // 대각 변 — 단독 벽 + 그 변의 개구부(승계/충돌 없음, suppress 만 존중)
+        const len = Math.hypot(e.bx - e.ax, e.bz - e.az);
+        const wall: CompiledWall = {
+          ax: e.ax, az: e.az, bx: e.bx, bz: e.bz,
+          h: m.wallH, sourceModuleIds: [m.id], openings: [],
+        };
+        for (const op of m.openings) {
+          if (op.side !== side) continue;
+          if (op.suppressedBy) continue; // 대각 벽엔 공유 상대가 없어 승자 판정 불가 — 보수적으로 제외
+          const t = Math.max(op.width / 2, Math.min(len - op.width / 2, op.offset));
+          wall.openings.push({
+            moduleId: m.id, openingId: op.id, type: op.type,
+            t, width: op.width, height: op.height,
+            ...(op.sill !== undefined ? { sill: op.sill } : {}),
+          });
+        }
+        walls.push(wall);
+        continue;
+      }
       const s = span(e);
       const key = `${s.horiz ? 'H' : 'V'}:${Math.round(s.fixed / EPS)}`;
       const arr = groups.get(key) ?? [];
