@@ -1,7 +1,7 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import type { ThreeEvent } from '@react-three/fiber';
 import { useThree } from '@react-three/fiber';
-import { Plane, Raycaster, Vector2, Vector3 } from 'three';
+import { BoxGeometry as BoxGeometryCtor, Plane, Raycaster, Vector2, Vector3 } from 'three';
 import { Edges, Html } from '@react-three/drei';
 import { useSpaceModuleStore, MODULE_PRESETS, OPENING_DEFAULTS } from './spaceModuleStore';
 import { useImportedModelStore, type PrimitiveKind } from '@/features/models/importedModelStore';
@@ -59,6 +59,14 @@ export function ModulePlacement() {
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
   }, []);
+
+  // 고스트 박스 지오메트리 — 종류별 1회 생성 (렌더마다 재생성 시 GPU 누수)
+  const ghostGeo = useMemo(() => {
+    if (!pendingOpeningType) return null;
+    const d = OPENING_DEFAULTS[pendingOpeningType];
+    return new BoxGeometryCtor(d.width, d.height, 0.3);
+  }, [pendingOpeningType]);
+  useEffect(() => () => { ghostGeo?.dispose(); }, [ghostGeo]);
 
   // 개구부 부착 모드 — canvas 캡처 단계에서 직접 레이캐스트 (벽 stopPropagation 우회).
   // 바닥(y=0) 평면과의 교점을 구해 가장 가까운 모듈 벽면에 스냅한다.
@@ -148,13 +156,24 @@ export function ModulePlacement() {
         const pz = attachHover ? attachHover.z : attachCursor![1];
         const rotY = attachHover ? attachHover.rotY : 0;
         return (
-          <mesh position={[px, y, pz]} rotation={[0, rotY, 0]}>
-            <boxGeometry args={[d.width, d.height, 0.1]} />
-            <meshBasicMaterial
-              color={attachHover ? '#a78bfa' : '#64748b'}
-              transparent opacity={attachHover ? 0.55 : 0.35} depthWrite={false}
-            />
-          </mesh>
+          <group position={[px, y, pz]} rotation={[0, rotY, 0]} renderOrder={999}>
+            {/* 벽 스냅 시 벽 두께(0.2m)를 관통하는 고스트 — depthTest 끔으로 벽 너머에서도 위치 확인 */}
+            <mesh renderOrder={999}>
+              <boxGeometry args={[d.width, d.height, attachHover ? 0.3 : 0.1]} />
+              <meshBasicMaterial
+                color={attachHover ? '#a78bfa' : '#64748b'}
+                transparent opacity={attachHover ? 0.5 : 0.35}
+                depthWrite={false} depthTest={false}
+              />
+            </mesh>
+            {/* 테두리 — 벽면 위 정확한 윤곽 강조 */}
+            {attachHover && ghostGeo && (
+              <lineSegments renderOrder={1000}>
+                <edgesGeometry args={[ghostGeo]} />
+                <lineBasicMaterial color="#7c3aed" depthTest={false} />
+              </lineSegments>
+            )}
+          </group>
         );
       })()}
 
