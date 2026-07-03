@@ -10,15 +10,21 @@ import { create } from 'zustand';
  */
 export interface VisibilityState {
   hidden: Record<string, true>;
+  /** 삭제된 mesh — 숨김과 달리 씬 트리에서도 사라진다(바닥/천장 등 자동 생성 메시용).
+   *  공간이 다시 빌드되면(벽 편집 등) 인덱스가 재생성되므로 그때 자연 복구될 수 있다. */
+  removed: Record<string, true>;
   isVisible: (key: string) => boolean;
   setVisible: (key: string, visible: boolean) => void;
   toggle: (key: string) => void;
+  /** mesh 삭제 — 렌더 제외 + 트리에서 제거 */
+  remove: (key: string) => void;
   showAll: () => void;
 }
 
 export const useVisibilityStore = create<VisibilityState>((set, get) => ({
   hidden: {},
-  isVisible: (key) => !get().hidden[key],
+  removed: {},
+  isVisible: (key) => !get().hidden[key] && !get().removed[key],
   setVisible: (key, visible) =>
     set((s) => {
       const next = { ...s.hidden };
@@ -33,7 +39,8 @@ export const useVisibilityStore = create<VisibilityState>((set, get) => ({
       else next[key] = true;
       return { hidden: next };
     }),
-  showAll: () => set({ hidden: {} }),
+  remove: (key) => set((s) => ({ removed: { ...s.removed, [key]: true } })),
+  showAll: () => set({ hidden: {}, removed: {} }),
 }));
 
 if (typeof window !== 'undefined') {

@@ -35,7 +35,7 @@ export function CeilingView({
   );
 
   const myKey = meshKey('ceiling', space.spaceIndex);
-  const visible = useVisibilityStore((s) => !s.hidden[myKey]);
+  const visible = useVisibilityStore((s) => !s.hidden[myKey] && !s.removed[myKey]);
   const selected = useMeshSelectionStore((s) => s.selectedMeshKeys.includes(myKey));
   const override = useMeshSelectionStore((s) => s.materials[myKey]);
   const selectMesh = useMeshSelectionStore((s) => s.selectMesh);

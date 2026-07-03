@@ -6,6 +6,7 @@ import { lastCompiled } from './syncModuleWalls';
 export function OpeningMarkers() {
   const modules = useSpaceModuleStore((s) => s.modules);
   const movingOpening = useSpaceModuleStore((s) => s.movingOpening);
+  const selectedOpening = useSpaceModuleStore((s) => s.selectedOpening);
   // syncModuleWalls 는 50ms debounce 후 lastCompiled 를 갱신하므로,
   // 모듈 변경 후 잠시 뒤 다시 렌더해 최신 컴파일 결과를 반영한다.
   const [, bump] = useState(0);
@@ -31,6 +32,7 @@ export function OpeningMarkers() {
           const cz = wall.az + uz * op.t;
           const isDoor = op.type === 'door';
           const isWindow = op.type === 'window';
+          const isSelected = selectedOpening?.openingId === op.openingId;
           // 창호는 sill(하단 높이)부터, 문/개구부는 바닥부터
           const y = (isWindow ? (op.sill ?? 0.9) : 0) + op.height / 2;
           return (
@@ -40,13 +42,16 @@ export function OpeningMarkers() {
               rotation={[0, rotY, 0]}
             >
               <mesh
-                // 표식 클릭 = 집어서 재배치 모드 (같은/다른 벽에 다시 놓기, ESC 취소)
+                // 표식 1클릭 = 선택(소속 모듈 인스펙터 패널 오픈 + 해당 행 강조·수정 가능).
+                // 이미 선택된 표식을 다시 클릭 = 집어서 재배치 모드 (같은/다른 벽에 다시 놓기, ESC 취소)
                 onPointerDown={(e) => {
                   if (e.button !== 0) return;
                   const st = useSpaceModuleStore.getState();
                   if (st.pendingOpeningType || st.movingOpening) return;
                   e.stopPropagation();
-                  st.setMovingOpening({ moduleId: op.moduleId, openingId: op.openingId });
+                  const already = st.selectedOpening?.openingId === op.openingId;
+                  if (already) st.setMovingOpening({ moduleId: op.moduleId, openingId: op.openingId });
+                  else st.selectOpening({ moduleId: op.moduleId, openingId: op.openingId });
                 }}
               >
                 {/* 문=갈색 박스 / 개구부=하늘색 반투명 / 창호=유리색 반투명.
@@ -56,8 +61,17 @@ export function OpeningMarkers() {
                   color={isDoor ? '#92400e' : isWindow ? '#60a5fa' : '#7dd3fc'}
                   transparent={!isDoor}
                   opacity={isDoor ? 1 : isWindow ? 0.55 : 0.4}
+                  emissive={isSelected ? '#22d3ee' : '#000000'}
+                  emissiveIntensity={isSelected ? 0.45 : 0}
                 />
               </mesh>
+              {isSelected && (
+                // 선택 하이라이트 — 시안 테두리 박스 (다시 클릭하면 집어서 재배치)
+                <mesh>
+                  <boxGeometry args={[op.width + 0.05, op.height + 0.05, (isDoor ? 0.06 : 0.2) + 0.05]} />
+                  <meshBasicMaterial color="#22d3ee" wireframe />
+                </mesh>
+              )}
               {isWindow && (
                 // 창틀 표현 — 얇은 흰 프레임
                 <mesh>

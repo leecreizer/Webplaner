@@ -64,9 +64,14 @@ interface SpaceModuleState {
   pendingOpeningType: 'door'|'opening'|'window' | null;
   /** 재배치 중인 기존 개구부 — 표식 클릭으로 집어서 같은/다른 벽에 놓는다. */
   movingOpening: { moduleId: string; openingId: string } | null;
+  /** 선택된 개구부 — 표식 1클릭으로 선택되어 인스펙터에서 해당 행이 강조·수정 가능.
+   *  선택된 표식을 다시 클릭하면 집어서 재배치 모드로 전환. */
+  selectedOpening: { moduleId: string; openingId: string } | null;
   setPendingKind(k: ModuleKind | null): void;
   setPendingOpeningType(t: 'door'|'opening'|'window' | null): void;
   setMovingOpening(m: { moduleId: string; openingId: string } | null): void;
+  /** 개구부 선택 — 소속 모듈도 함께 선택해 인스펙터 패널을 연다. */
+  selectOpening(o: { moduleId: string; openingId: string } | null): void;
   add(kind: ModuleKind, x: number, z: number): string;
   remove(id: string): void;
   update(id: string, patch: Partial<SpaceModule>): void;
@@ -100,12 +105,18 @@ export const useSpaceModuleStore = create<SpaceModuleState>((set, get) => ({
   pendingKind: null,
   pendingOpeningType: null,
   movingOpening: null,
+  selectedOpening: null,
 
   setPendingKind(k) { set({ pendingKind: k }); },
 
   setPendingOpeningType(t) { set({ pendingOpeningType: t }); },
 
   setMovingOpening(m) { set({ movingOpening: m }); },
+
+  selectOpening(o) {
+    if (o) set({ selectedOpening: o, selectedId: o.moduleId });
+    else set({ selectedOpening: null });
+  },
 
   add(kind, x, z) {
     const preset = MODULE_PRESETS[kind];
@@ -123,6 +134,7 @@ export const useSpaceModuleStore = create<SpaceModuleState>((set, get) => ({
     set((s) => ({
       modules: s.modules.filter((m) => m.id !== id),
       selectedId: s.selectedId === id ? null : s.selectedId,
+      selectedOpening: s.selectedOpening?.moduleId === id ? null : s.selectedOpening,
     }));
   },
 
@@ -161,7 +173,13 @@ export const useSpaceModuleStore = create<SpaceModuleState>((set, get) => ({
     get().update(id, { x: nx, z: nz, ry: nry });
   },
 
-  select(id) { set({ selectedId: id }); },
+  select(id) {
+    set((s) => ({
+      selectedId: id,
+      // 다른 모듈 선택/해제 시 개구부 선택도 정리
+      selectedOpening: s.selectedOpening && s.selectedOpening.moduleId === id ? s.selectedOpening : null,
+    }));
+  },
 
   addOpening(moduleId, o) {
     const id = newId('op');
@@ -176,6 +194,7 @@ export const useSpaceModuleStore = create<SpaceModuleState>((set, get) => ({
     set((s) => ({
       modules: s.modules.map((m) =>
         m.id === moduleId ? { ...m, openings: m.openings.filter((o) => o.id !== openingId) } : m),
+      selectedOpening: s.selectedOpening?.openingId === openingId ? null : s.selectedOpening,
     }));
   },
 

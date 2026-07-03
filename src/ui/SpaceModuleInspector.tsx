@@ -1,3 +1,4 @@
+import { useEffect, useRef } from 'react';
 import {
   useSpaceModuleStore,
   MODULE_PRESETS,
@@ -22,6 +23,7 @@ export function SpaceModuleInspector() {
   const is2D = useViewStore((s) => s.viewMode === '2D');
   const modules = useSpaceModuleStore((s) => s.modules);
   const selectedId = useSpaceModuleStore((s) => s.selectedId);
+  const selectedOpening = useSpaceModuleStore((s) => s.selectedOpening);
   const update = useSpaceModuleStore((s) => s.update);
   const remove = useSpaceModuleStore((s) => s.remove);
   const select = useSpaceModuleStore((s) => s.select);
@@ -124,6 +126,7 @@ export function SpaceModuleInspector() {
           <OpeningRow
             key={o.id}
             opening={o}
+            highlighted={selectedOpening?.openingId === o.id}
             onChange={(patch) => updateOpening(m.id, o.id, patch)}
             onRemove={() => removeOpening(m.id, o.id)}
           />
@@ -151,21 +154,29 @@ export function SpaceModuleInspector() {
 
 function OpeningRow({
   opening,
+  highlighted = false,
   onChange,
   onRemove,
 }: {
   opening: ModuleOpening;
+  /** 캔버스에서 표식으로 선택된 개구부 — 행 강조 + 자동 스크롤 */
+  highlighted?: boolean;
   onChange: (patch: Partial<ModuleOpening>) => void;
   onRemove: () => void;
 }) {
+  const rowRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (highlighted) rowRef.current?.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+  }, [highlighted]);
   return (
     <div
+      ref={rowRef}
       style={{
         marginBottom: 6,
         padding: '4px 6px',
-        background: '#1c1c1f',
+        background: highlighted ? '#123036' : '#1c1c1f',
         borderRadius: 4,
-        border: '1px solid #2e2e33',
+        border: highlighted ? '1px solid #22d3ee' : '1px solid #2e2e33',
       }}
     >
       <div style={{ display: 'flex', gap: 4, alignItems: 'center', marginBottom: 4 }}>

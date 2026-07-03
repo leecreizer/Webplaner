@@ -33,6 +33,14 @@ export function SceneOutliner() {
   const removeLight = useCustomLightStore((s) => s.remove);
   const hidden = useVisibilityStore((s) => s.hidden);
   const toggle = useVisibilityStore((s) => s.toggle);
+  const removed = useVisibilityStore((s) => s.removed);
+  const removeMesh = useVisibilityStore((s) => s.remove);
+  /** 바닥/천장 삭제 — 렌더 제외 + 트리 제거 + 선택 해제 */
+  const deleteMesh = (key: string) => {
+    removeMesh(key);
+    const ms = useMeshSelectionStore.getState();
+    if (ms.selectedMeshKeys.includes(key)) ms.selectMesh(null);
+  };
 
   // 불러온 모델
   const importedModels = useImportedModelStore((s) => s.models);
@@ -91,22 +99,28 @@ export function SceneOutliner() {
           return (
             <div key={`sp-${sp.spaceIndex}`} style={spaceGroupStyle}>
               <div style={spaceTitleStyle}>{sp.name || `공간 ${sp.spaceIndex}`}</div>
-              <Row
-                label="└ 바닥"
-                isSelected={selectedMeshKeys.includes(floorKey)}
-                isHidden={!!hidden[floorKey]}
-                onSelect={(shift) => selectMesh(floorKey, shift)}
-                onToggle={() => toggle(floorKey)}
-                indent
-              />
-              <Row
-                label="└ 천장"
-                isSelected={selectedMeshKeys.includes(ceilingKey)}
-                isHidden={!!hidden[ceilingKey]}
-                onSelect={(shift) => selectMesh(ceilingKey, shift)}
-                onToggle={() => toggle(ceilingKey)}
-                indent
-              />
+              {!removed[floorKey] && (
+                <Row
+                  label="└ 바닥"
+                  isSelected={selectedMeshKeys.includes(floorKey)}
+                  isHidden={!!hidden[floorKey]}
+                  onSelect={(shift) => selectMesh(floorKey, shift)}
+                  onToggle={() => toggle(floorKey)}
+                  onDelete={() => deleteMesh(floorKey)}
+                  indent
+                />
+              )}
+              {!removed[ceilingKey] && (
+                <Row
+                  label="└ 천장"
+                  isSelected={selectedMeshKeys.includes(ceilingKey)}
+                  isHidden={!!hidden[ceilingKey]}
+                  onSelect={(shift) => selectMesh(ceilingKey, shift)}
+                  onToggle={() => toggle(ceilingKey)}
+                  onDelete={() => deleteMesh(ceilingKey)}
+                  indent
+                />
+              )}
             </div>
           );
         })}
