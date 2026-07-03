@@ -27,21 +27,31 @@ export function OpeningMarkers() {
           const cx = wall.ax + ux * op.t;
           const cz = wall.az + uz * op.t;
           const isDoor = op.type === 'door';
+          const isWindow = op.type === 'window';
+          // 창호는 sill(하단 높이)부터, 문/개구부는 바닥부터
+          const y = (isWindow ? (op.sill ?? 0.9) : 0) + op.height / 2;
           return (
             <group
               key={`${wi}-${op.openingId}`}
-              position={[cx, op.height / 2, cz]}
+              position={[cx, y, cz]}
               rotation={[0, rotY, 0]}
             >
               <mesh>
-                {/* 문=갈색 프레임 박스(width×0.06×height), 개구부=하늘색 반투명 박스 */}
+                {/* 문=갈색 박스 / 개구부=하늘색 반투명 / 창호=유리색 반투명 */}
                 <boxGeometry args={[op.width, op.height, isDoor ? 0.06 : 0.08]} />
                 <meshStandardMaterial
-                  color={isDoor ? '#92400e' : '#7dd3fc'}
+                  color={isDoor ? '#92400e' : isWindow ? '#60a5fa' : '#7dd3fc'}
                   transparent={!isDoor}
-                  opacity={isDoor ? 1 : 0.4}
+                  opacity={isDoor ? 1 : isWindow ? 0.55 : 0.4}
                 />
               </mesh>
+              {isWindow && (
+                // 창틀 표현 — 얇은 흰 프레임
+                <mesh>
+                  <boxGeometry args={[op.width + 0.06, op.height + 0.06, 0.05]} />
+                  <meshStandardMaterial color="#e2e8f0" transparent opacity={0.9} />
+                </mesh>
+              )}
             </group>
           );
         });

@@ -10,10 +10,12 @@ export type ModuleSide = 'N'|'E'|'S'|'W';
 export interface ModuleOpening {
   id: string;
   side: ModuleSide;
-  type: 'door'|'opening';
+  type: 'door'|'opening'|'window';
   offset: number;
   width: number;
   height: number;
+  /** 창호 전용 — 바닥에서 창 하단까지 높이(m). 문/개구부는 0(바닥 시작). */
+  sill?: number;
   /** 공유벽 개구부 충돌에서 진 쪽 표시 — 이긴 opening id. 분리 시 해제. */
   suppressedBy?: string;
 }
@@ -44,12 +46,22 @@ export const MODULE_PRESETS: Record<ModuleKind, { w: number; d: number; label: s
 
 const DEFAULT_WALL_H = 2.4;
 
+/** 벽 부착 개구부 종류별 기본 치수 — 툴바 '기본 모델링' 도어/창호/개구부 배치에 사용. */
+export const OPENING_DEFAULTS: Record<'door'|'opening'|'window', { width: number; height: number; sill?: number; label: string }> = {
+  door:    { width: 0.9, height: 2.1, label: '도어' },
+  opening: { width: 1.0, height: 2.1, label: '개구부' },
+  window:  { width: 1.2, height: 1.2, sill: 0.9, label: '창호' },
+};
+
 interface SpaceModuleState {
   modules: SpaceModule[];
   selectedId: string | null;
   /** 팔레트에서 선택했지만 아직 바닥에 배치 전인 모듈 종류. */
   pendingKind: ModuleKind | null;
+  /** 벽 부착 대기 중인 개구부 종류 (툴바 기본 모델링 → 모듈 벽 클릭 배치). */
+  pendingOpeningType: 'door'|'opening'|'window' | null;
   setPendingKind(k: ModuleKind | null): void;
+  setPendingOpeningType(t: 'door'|'opening'|'window' | null): void;
   add(kind: ModuleKind, x: number, z: number): string;
   remove(id: string): void;
   update(id: string, patch: Partial<SpaceModule>): void;
@@ -76,8 +88,11 @@ export const useSpaceModuleStore = create<SpaceModuleState>((set, get) => ({
   modules: [],
   selectedId: null,
   pendingKind: null,
+  pendingOpeningType: null,
 
   setPendingKind(k) { set({ pendingKind: k }); },
+
+  setPendingOpeningType(t) { set({ pendingOpeningType: t }); },
 
   add(kind, x, z) {
     const preset = MODULE_PRESETS[kind];

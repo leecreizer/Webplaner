@@ -3,7 +3,7 @@ import type { SpaceModule, ModuleOpening, ModuleKind, ModuleSide } from './space
 
 const VALID_KINDS: ModuleKind[] = ['bedroom', 'living', 'kitchen', 'bath', 'entrance', 'corridor', 'custom'];
 const VALID_SIDES: ModuleSide[] = ['N', 'E', 'S', 'W'];
-const VALID_TYPES: ModuleOpening['type'][] = ['door', 'opening'];
+const VALID_TYPES: ModuleOpening['type'][] = ['door', 'opening', 'window'];
 
 /** 알 수 없는 kind 문자열은 'custom'으로 폴백. */
 function toModuleKind(kind: string): ModuleKind {
@@ -25,6 +25,7 @@ function openingToData(o: ModuleOpening): SpaceModuleOpeningData {
     id: o.id,
     side: o.side,
     type: o.type,
+    ...(o.sill !== undefined ? { sill: o.sill } : {}),
     offset: o.offset,
     width: o.width,
     height: o.height,
@@ -37,6 +38,7 @@ function openingFromData(o: SpaceModuleOpeningData): ModuleOpening {
     id: o.id,
     side: toModuleSide(o.side),
     type: toOpeningType(o.type),
+    ...(typeof o.sill === 'number' ? { sill: o.sill } : {}),
     offset: o.offset,
     width: o.width,
     height: o.height,

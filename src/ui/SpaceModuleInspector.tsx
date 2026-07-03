@@ -186,6 +186,7 @@ function OpeningRow({
         >
           <option value="door">문</option>
           <option value="opening">개구부</option>
+          <option value="window">창호</option>
         </select>
         {opening.suppressedBy && (
           <span style={{ fontSize: 10, color: '#f87171' }} title={`suppressedBy: ${opening.suppressedBy}`}>
@@ -200,6 +201,9 @@ function OpeningRow({
         <MiniNumField label="위치" value={opening.offset} onChange={(v) => onChange({ offset: v })} />
         <MiniNumField label="폭" value={opening.width} onChange={(v) => onChange({ width: v })} />
         <MiniNumField label="높이" value={opening.height} onChange={(v) => onChange({ height: v })} />
+        {opening.type === 'window' && (
+          <MiniNumField label="하단" value={opening.sill ?? 0.9} onChange={(v) => onChange({ sill: v })} />
+        )}
       </div>
     </div>
   );

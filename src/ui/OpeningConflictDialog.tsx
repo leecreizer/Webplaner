@@ -6,7 +6,7 @@ import type { OpeningConflict } from '@/features/spaceModules/compileModules';
 const conflictKey = (c: OpeningConflict) =>
   `${c.a.moduleId}:${c.a.openingId}|${c.b.moduleId}:${c.b.openingId}`;
 
-const TYPE_LABEL: Record<'door' | 'opening', string> = { door: '문', opening: '개구부' };
+const TYPE_LABEL: Record<'door' | 'opening' | 'window', string> = { door: '문', opening: '개구부', window: '창호' };
 
 /** 공유벽 개구부 충돌 시 어느 쪽을 유지할지 선택하는 모달. */
 export function OpeningConflictDialog() {

@@ -3,7 +3,9 @@ import type { ModuleSide, SpaceModule } from './spaceModuleStore';
 /** 컴파일 산출 개구부 — 세그먼트 a→b 방향 기준 위치. */
 export interface CompiledOpening {
   moduleId: string; openingId: string;
-  type: 'door'|'opening';
+  type: 'door'|'opening'|'window';
+  /** 창호 하단 높이(m). */
+  sill?: number;
   t: number; width: number; height: number;
 }
 /** 컴파일 산출 벽 세그먼트 — XZ 평면 축 정렬 선분. */
@@ -123,6 +125,7 @@ export function compileModules(modules: SpaceModule[]): { walls: CompiledWall[];
           cand.push({
             moduleId: o.moduleId, openingId: op.id, type: op.type,
             t: centerWorld - p.lo, width: op.width, height: op.height,
+            ...(op.sill !== undefined ? { sill: op.sill } : {}),
           });
         }
       }

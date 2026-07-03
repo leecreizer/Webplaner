@@ -44,6 +44,8 @@ export interface SpaceModuleOpeningData {
   offset: number;
   width: number;
   height: number;
+  /** 창호 하단 높이(m) — window 타입 전용. */
+  sill?: number;
   suppressedBy?: string;
 }
 

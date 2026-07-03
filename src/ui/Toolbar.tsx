@@ -6,6 +6,7 @@ import { buildSpaces } from '@/domain/layout/SpaceBuilder';
 import { useCustomLightStore, type LightKind } from '@/engine/stores/customLightStore';
 import { useEditStore } from '@/features/editing/editStore';
 import { useImportedModelStore, type PrimitiveKind } from '@/features/models/importedModelStore';
+import { useSpaceModuleStore, OPENING_DEFAULTS } from '@/features/spaceModules/spaceModuleStore';
 import { usePlacedProductStore } from '@/features/placement/placedProductStore';
 
 const LIGHT_OPTIONS: { kind: LightKind; label: string; desc: string }[] = [
@@ -316,14 +317,33 @@ function AddPrimitiveDropdown() {
       <button
         onClick={() => setOpen((v) => !v)}
         style={open ? activeButtonStyle : buttonStyle}
-        title="기본 도형(박스/구/원뿔 등)을 씬에 추가"
+        title="기본 모델링(도형·도어·창호·개구부)을 씬/모듈 벽에 추가"
       >
-        ◇ 기본 도형 ▾
+        ◇ 기본 모델링 ▾
       </button>
       {open && (
         <>
           <div onClick={() => setOpen(false)} style={{ position: 'fixed', inset: 0, zIndex: 10 }} />
           <div style={dropdownStyle}>
+            {/* 벽 부착 모델링 — 공간 모듈 벽을 클릭해 설계 (ESC 취소) */}
+            <div style={{ fontSize: 10, opacity: 0.55, padding: '4px 8px 2px' }}>벽 부착 — 공간 모듈 벽 클릭</div>
+            {(['door', 'window', 'opening'] as const).map((t) => (
+              <button
+                key={t}
+                onClick={() => {
+                  useSpaceModuleStore.getState().setPendingOpeningType(t);
+                  setOpen(false);
+                }}
+                style={dropdownItemStyle}
+                title={`${OPENING_DEFAULTS[t].label} ${OPENING_DEFAULTS[t].width}×${OPENING_DEFAULTS[t].height}m — 모듈 벽 클릭으로 배치`}
+              >
+                <span style={{ fontWeight: 600 }}>
+                  {t === 'door' ? '🚪 도어' : t === 'window' ? '🪟 창호' : '⬜ 개구부'}
+                </span>
+              </button>
+            ))}
+            <div style={{ height: 1, background: '#3f3f46', margin: '4px 0' }} />
+            <div style={{ fontSize: 10, opacity: 0.55, padding: '4px 8px 2px' }}>기본 도형</div>
             {PRIMITIVE_OPTIONS.map((o) => (
               <button
                 key={o.kind}

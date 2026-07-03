@@ -1,7 +1,8 @@
 import { useEffect, useRef, useState } from 'react';
 import type { ThreeEvent } from '@react-three/fiber';
 import { Edges, Html } from '@react-three/drei';
-import { useSpaceModuleStore, MODULE_PRESETS } from './spaceModuleStore';
+import { useSpaceModuleStore, MODULE_PRESETS, OPENING_DEFAULTS } from './spaceModuleStore';
+import { moduleEdges } from './compileModules';
 import { computeModuleSnap } from './moduleSnap';
 import { OpeningMarkers } from './OpeningMarkers';
 
@@ -15,14 +16,23 @@ export function ModulePlacement() {
   const modules = useSpaceModuleStore((s) => s.modules);
   const selectedId = useSpaceModuleStore((s) => s.selectedId);
   const pendingKind = useSpaceModuleStore((s) => s.pendingKind);
+  const pendingOpeningType = useSpaceModuleStore((s) => s.pendingOpeningType);
   const [ghost, setGhost] = useState<[number, number] | null>(null);
+  // 개구부 부착 미리보기 — 포인터 근처 모듈 벽면 위 스냅 위치
+  const [attachHover, setAttachHover] = useState<{
+    moduleId: string; side: 'N'|'E'|'S'|'W'; offset: number;
+    x: number; z: number; rotY: number;
+  } | null>(null);
   // 드래그 중인 모듈의 "잡은 지점 - 모듈 중심" 오프셋. null이면 드래그 아님.
   const dragRef = useRef<{ id: string; offX: number; offZ: number } | null>(null);
 
   // ESC 로 배치 취소
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') useSpaceModuleStore.getState().setPendingKind(null);
+      if (e.key === 'Escape') {
+        useSpaceModuleStore.getState().setPendingKind(null);
+        useSpaceModuleStore.getState().setPendingOpeningType(null);
+      }
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
@@ -47,6 +57,46 @@ export function ModulePlacement() {
   return (
     <group>
       <OpeningMarkers />
+      {/* 개구부 부착 모드: 바닥 포인터 → 가장 가까운 모듈 벽면에 스냅 미리보기 + 클릭 부착 */}
+      {pendingOpeningType && (
+        <mesh
+          rotation={[-Math.PI / 2, 0, 0]}
+          position={[0, 0.001, 0]}
+          onPointerMove={(e) => {
+            e.stopPropagation();
+            setAttachHover(findWallAttach(e.point.x, e.point.z, pendingOpeningType));
+          }}
+          onPointerDown={(e) => {
+            if (e.button !== 0) return;
+            e.stopPropagation();
+            const hit = findWallAttach(e.point.x, e.point.z, pendingOpeningType);
+            if (!hit) return; // 벽 근처가 아니면 무시 (모드 유지)
+            const st = useSpaceModuleStore.getState();
+            const d = OPENING_DEFAULTS[pendingOpeningType];
+            st.addOpening(hit.moduleId, {
+              side: hit.side, type: pendingOpeningType,
+              offset: hit.offset, width: d.width, height: d.height,
+              ...(d.sill !== undefined ? { sill: d.sill } : {}),
+            });
+            st.setPendingOpeningType(null);
+            setAttachHover(null);
+          }}
+        >
+          <planeGeometry args={[200, 200]} />
+          <meshBasicMaterial visible={false} />
+        </mesh>
+      )}
+      {pendingOpeningType && attachHover && (() => {
+        const d = OPENING_DEFAULTS[pendingOpeningType];
+        const y = (pendingOpeningType === 'window' ? (d.sill ?? 0.9) : 0) + d.height / 2;
+        return (
+          <mesh position={[attachHover.x, y, attachHover.z]} rotation={[0, attachHover.rotY, 0]}>
+            <boxGeometry args={[d.width, d.height, 0.1]} />
+            <meshBasicMaterial color="#a78bfa" transparent opacity={0.5} depthWrite={false} />
+          </mesh>
+        );
+      })()}
+
       {/* 배치 모드: 투명 바닥 캐처 + 고스트 */}
       {pendingKind && (
         <mesh
@@ -84,7 +134,7 @@ export function ModulePlacement() {
               position={[0, 0.015, 0]}
               onPointerDown={(e: ThreeEvent<PointerEvent>) => {
                 if (e.button !== 0) return;
-                if (useSpaceModuleStore.getState().pendingKind) return;
+                { const st = useSpaceModuleStore.getState(); if (st.pendingKind || st.pendingOpeningType) return; }
                 e.stopPropagation();
                 useSpaceModuleStore.getState().select(m.id);
                 // 드래그 시작 — 잡은 지점과 모듈 중심의 오프셋을 저장하고 포인터 캡처.
@@ -92,7 +142,7 @@ export function ModulePlacement() {
                 (e.target as Element).setPointerCapture(e.pointerId);
               }}
               onPointerMove={(e: ThreeEvent<PointerEvent>) => {
-                if (useSpaceModuleStore.getState().pendingKind) return;
+                { const st = useSpaceModuleStore.getState(); if (st.pendingKind || st.pendingOpeningType) return; }
                 const d = dragRef.current;
                 if (!d || d.id !== m.id) return;
                 e.stopPropagation();
@@ -125,4 +175,34 @@ export function ModulePlacement() {
       })}
     </group>
   );
+}
+
+
+/** 포인터(px,pz)에서 0.6m 안의 가장 가까운 모듈 벽면을 찾아 부착 정보 계산. 없으면 null. */
+function findWallAttach(px: number, pz: number, type: 'door'|'opening'|'window') {
+  const modules = useSpaceModuleStore.getState().modules;
+  const d = OPENING_DEFAULTS[type];
+  let best: { moduleId: string; side: 'N'|'E'|'S'|'W'; offset: number; x: number; z: number; rotY: number } | null = null;
+  let bestDist = 0.6; // 부착 감지 반경(m)
+  for (const m of modules) {
+    const edges = moduleEdges(m);
+    for (const side of ['N', 'E', 'S', 'W'] as const) {
+      const e = edges[side];
+      const dx = e.bx - e.ax, dz = e.bz - e.az;
+      const len = Math.hypot(dx, dz) || 1;
+      const ux = dx / len, uz = dz / len;
+      // 포인터를 변 위로 투영
+      let t = (px - e.ax) * ux + (pz - e.az) * uz;
+      // 개구부가 변 밖으로 나가지 않게 클램프
+      t = Math.max(d.width / 2, Math.min(len - d.width / 2, t));
+      if (len < d.width) continue; // 변이 개구부보다 짧으면 부착 불가
+      const wx = e.ax + ux * t, wz = e.az + uz * t;
+      const dist = Math.hypot(px - wx, pz - wz);
+      if (dist < bestDist) {
+        bestDist = dist;
+        best = { moduleId: m.id, side, offset: t, x: wx, z: wz, rotY: -Math.atan2(dz, dx) };
+      }
+    }
+  }
+  return best;
 }
