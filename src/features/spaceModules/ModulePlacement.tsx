@@ -5,6 +5,7 @@ import { BoxGeometry as BoxGeometryCtor, Plane, Raycaster, Vector2, Vector3 } fr
 import { Edges, Html } from '@react-three/drei';
 import { useSpaceModuleStore, MODULE_PRESETS, OPENING_DEFAULTS } from './spaceModuleStore';
 import { useImportedModelStore, type PrimitiveKind } from '@/features/models/importedModelStore';
+import { useViewStore } from '@/engine/stores/viewStore';
 import { moduleEdges } from './compileModules';
 import { computeModuleSnap } from './moduleSnap';
 import { OpeningMarkers } from './OpeningMarkers';
@@ -65,6 +66,7 @@ export function ModulePlacement() {
       if (e.key !== 'r' && e.key !== 'R') return;
       const t = e.target as HTMLElement | null;
       if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.isContentEditable)) return;
+      if (useViewStore.getState().viewMode !== '2D') return; // 모듈 회전도 2D 전용
       const s = useSpaceModuleStore.getState();
       if (!s.selectedId) return;
       const m = s.modules.find((mm) => mm.id === s.selectedId);
@@ -258,6 +260,8 @@ export function ModulePlacement() {
                 { const st = useSpaceModuleStore.getState(); if (st.pendingKind || st.pendingOpeningType || st.movingOpening) return; }
                 e.stopPropagation();
                 useSpaceModuleStore.getState().select(m.id);
+                // 모듈 이동은 **2D(탑뷰) 전용** — 3D 에서는 선택만 (공간 배치 변경 방지)
+                if (useViewStore.getState().viewMode !== '2D') return;
                 // 드래그 시작 — 잡은 지점과 모듈 중심의 오프셋을 저장하고 포인터 캡처.
                 dragRef.current = { id: m.id, offX: e.point.x - m.x, offZ: e.point.z - m.z };
                 (e.target as Element).setPointerCapture(e.pointerId);
