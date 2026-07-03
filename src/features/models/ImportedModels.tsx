@@ -216,6 +216,22 @@ function ModelBody({ model, obj: rawObj }: { model: ImportedModel; obj: Object3D
         scale={model.scale}
         onPointerDown={(e) => {
           if (e.button !== 0) return;
+          // 그라운드(기본 바닥 plane)는 선택을 가로채지 않는다 — '빈 공간 클릭'과 동일하게
+          // 전체 선택 해제만 수행. (재질 편집은 씬 트리에서 선택해 사용)
+          if (model.isGround) {
+            e.stopPropagation();
+            select(null);
+            // 그라운드가 클릭을 소비하므로 onPointerMissed 대신 여기서 전체 해제
+            import('@/features/placement/placedProductStore').then(({ usePlacedProductStore }) => {
+              const st = usePlacedProductStore.getState();
+              if (st.selectedIds.length > 0) { st.select(null); window.parent?.postMessage({ type: 'hp3:deselected' }, '*'); }
+            });
+            import('@/features/selection/meshSelectionStore').then(({ useMeshSelectionStore }) =>
+              useMeshSelectionStore.getState().selectMesh(null));
+            import('@/features/spaceModules/spaceModuleStore').then(({ useSpaceModuleStore }) =>
+              useSpaceModuleStore.getState().select(null));
+            return;
+          }
           e.stopPropagation();
           select(model.id);
         }}

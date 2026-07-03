@@ -42,6 +42,8 @@ import { SpaceModuleInspector } from './ui/SpaceModuleInspector';
 import { HostProvider } from './host/HostContext';
 import type { HostEventHandlers } from './host/HostEvents';
 import { useImportedModelStore } from '@/features/models/importedModelStore';
+import { useMeshSelectionStore } from '@/features/selection/meshSelectionStore';
+import { useSpaceModuleStore } from '@/features/spaceModules/spaceModuleStore';
 import { ProductPlacement } from '@/features/placement/ProductPlacement';
 import { usePlacedProductStore } from '@/features/placement/placedProductStore';
 import { ModulePlacement } from '@/features/spaceModules/ModulePlacement';
@@ -82,7 +84,7 @@ export default function App({
     const st = useImportedModelStore.getState();
     if (st.models.length === 0) {
       const id = st.addPrimitive('plane');
-      st.update(id, { scale: [10, 10, 10], position: [0, 0, 0] });
+      st.update(id, { scale: [10, 10, 10], position: [0, 0, 0], isGround: true });
       st.select(null);
     }
   }, []);
@@ -108,6 +110,10 @@ export default function App({
             if ((e as MouseEvent).button !== 0) return;
             const st = usePlacedProductStore.getState();
             if (st.selectedIds.length > 0) { st.select(null); window.parent?.postMessage({ type: 'hp3:deselected' }, '*'); }
+            // 빈 공간 클릭 = 전체 선택 해제 (모델·벽/바닥 메시·공간 모듈)
+            useImportedModelStore.getState().select(null);
+            useMeshSelectionStore.getState().selectMesh(null);
+            useSpaceModuleStore.getState().select(null);
           }}
           shadows={{ type: PCFShadowMap }}
           // 디스플레이 해상도(devicePixelRatio)에 맞춰 렌더 — 고DPI 화면에서 선명. r3f Canvas 는

@@ -65,6 +65,8 @@ export interface ImportedModel {
   /** 축별 배율 [x(길이), y(높이), z(깊이)] — 기즈모 크기 모드 화살표로 개별 조절. */
   scale: [number, number, number];
   visible: boolean;
+  /** 바닥(그라운드) 역할 — 클릭해도 선택하지 않고 '빈 공간 클릭'처럼 전체 선택 해제. */
+  isGround?: boolean;
   /** 로드 후 ImportedModels 가 채움 — 모델의 머티리얼 슬롯 목록. */
   materialSlots?: MaterialSlot[];
   /** 사용자 머티리얼 오버라이드 (key → edit). 없으면 원본. */
