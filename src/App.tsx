@@ -47,6 +47,7 @@ import { usePlacedProductStore } from '@/features/placement/placedProductStore';
 import { ModulePlacement } from '@/features/spaceModules/ModulePlacement';
 import { startModuleWallSync } from '@/features/spaceModules/syncModuleWalls';
 import { ModulePalette } from './ui/ModulePalette';
+import { OpeningConflictDialog } from './ui/OpeningConflictDialog';
 
 /**
  * HomePlanner3 루트 컴포넌트.
@@ -99,6 +100,7 @@ export default function App({
         {showLightingPanel && <BuiltinLightInspector />}
         {showLightingPanel && <ModelInspector />}
         <SpaceModuleInspector />
+        <OpeningConflictDialog />
         <Canvas
           // 빈 곳 클릭(씬 오브젝트 미적중) → 배치 상품 선택 해제. 기즈모 클릭은 이벤트를
           // TransformControls가 가로채므로 여기로 오지 않음.

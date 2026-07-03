@@ -3,6 +3,7 @@ import type { ThreeEvent } from '@react-three/fiber';
 import { Edges, Html } from '@react-three/drei';
 import { useSpaceModuleStore, MODULE_PRESETS } from './spaceModuleStore';
 import { computeModuleSnap } from './moduleSnap';
+import { OpeningMarkers } from './OpeningMarkers';
 
 const KIND_COLOR: Record<string, string> = {
   bedroom: '#93c5fd', living: '#fcd34d', kitchen: '#86efac',
@@ -45,6 +46,7 @@ export function ModulePlacement() {
 
   return (
     <group>
+      <OpeningMarkers />
       {/* 배치 모드: 투명 바닥 캐처 + 고스트 */}
       {pendingKind && (
         <mesh

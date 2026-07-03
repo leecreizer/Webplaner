@@ -4,7 +4,7 @@ import { Wall } from '@/domain/structures/Wall';
 import { useLayoutStore, layoutRegistry } from '@/domain/state/layoutStore';
 import { buildSpaces } from '@/domain/layout/SpaceBuilder';
 import { useSpaceModuleStore } from './spaceModuleStore';
-import { compileModules, type OpeningConflict } from './compileModules';
+import { compileModules, type CompiledWall, type OpeningConflict } from './compileModules';
 
 /** 모듈발 벽 태그 — 도메인 클래스 무수정 확장 (스펙 '기존 구조 무변경' 원칙). */
 const MODULE_TAG: unique symbol = Symbol('spaceModuleWall');
@@ -19,12 +19,30 @@ export function wallSourceModules(w: Wall): string[] | undefined {
 
 /** 마지막 컴파일의 개구부 충돌 — UI(충돌 다이얼로그)가 구독. */
 export const lastConflicts: { current: OpeningConflict[] } = { current: [] };
+/** 마지막 컴파일 결과 벽 목록 — OpeningMarkers 가 참조. */
+export const lastCompiled: { current: CompiledWall[] } = { current: [] };
+
+function conflictsEqual(a: OpeningConflict[], b: OpeningConflict[]): boolean {
+  if (a.length !== b.length) return false;
+  for (let i = 0; i < a.length; i++) {
+    if (a[i].a.openingId !== b[i].a.openingId || a[i].b.openingId !== b[i].b.openingId) return false;
+  }
+  return true;
+}
 
 /** 모듈 상태를 layoutStore 벽으로 동기화하고 공간을 재유도한다. */
 export function syncModuleWalls(): void {
+  // 분리된 모듈의 낡은 suppressedBy 를 먼저 해제 — 새 컴파일에 반영되도록.
+  useSpaceModuleStore.getState().releaseStaleSuppressions();
+
   const modules = useSpaceModuleStore.getState().modules;
   const { walls: compiled, conflicts } = compileModules(modules);
   lastConflicts.current = conflicts;
+  lastCompiled.current = compiled;
+  const prevConflicts = useSpaceModuleStore.getState().openingConflicts;
+  if (!conflictsEqual(prevConflicts, conflicts)) {
+    useSpaceModuleStore.getState().setOpeningConflicts(conflicts);
+  }
 
   // 1) 기존 모듈발 벽 전부 제거 (그린 벽은 태그 없음 → 불변)
   for (const w of [...useLayoutStore.getState().walls]) {

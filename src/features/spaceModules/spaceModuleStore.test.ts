@@ -46,6 +46,25 @@ describe('spaceModuleStore', () => {
     expect(useSpaceModuleStore.getState().modules[0].openings).toHaveLength(0);
   });
 
+  it('releaseStaleSuppressions: 분리되면 suppressedBy 해제', () => {
+    const s = useSpaceModuleStore.getState();
+    const id1 = s.add('custom', 0, 0);
+    const id2 = s.add('custom', 3, 0); // w=3 맞벽
+    const st = useSpaceModuleStore.getState();
+    const o1 = st.addOpening(id1, { side: 'E', type: 'door', offset: 1.5, width: 0.9, height: 2.1 });
+    const o2 = st.addOpening(id2, { side: 'W', type: 'door', offset: 1.5, width: 0.9, height: 2.1 });
+    useSpaceModuleStore.getState().resolveConflict(
+      { moduleId: id1, openingId: o1 }, { moduleId: id2, openingId: o2 });
+    expect(useSpaceModuleStore.getState().modules[1].openings[0].suppressedBy).toBe(o1);
+    // 맞벽 유지 상태에서는 해제되지 않아야 한다
+    useSpaceModuleStore.getState().releaseStaleSuppressions();
+    expect(useSpaceModuleStore.getState().modules[1].openings[0].suppressedBy).toBe(o1);
+    // 모듈2를 멀리 이동 → 해제
+    useSpaceModuleStore.getState().update(id2, { x: 20 });
+    useSpaceModuleStore.getState().releaseStaleSuppressions();
+    expect(useSpaceModuleStore.getState().modules[1].openings[0].suppressedBy).toBeUndefined();
+  });
+
   it('pendingKind 설정/해제', () => {
     useSpaceModuleStore.getState().setPendingKind('kitchen');
     expect(useSpaceModuleStore.getState().pendingKind).toBe('kitchen');

@@ -1,4 +1,5 @@
 import { create } from 'zustand';
+import { moduleEdges, type OpeningConflict } from './compileModules';
 
 /** 공간 모듈 종류. */
 export type ModuleKind = 'bedroom'|'living'|'kitchen'|'bath'|'entrance'|'corridor'|'custom';
@@ -56,6 +57,16 @@ interface SpaceModuleState {
   addOpening(moduleId: string, o: Omit<ModuleOpening, 'id'>): string;
   removeOpening(moduleId: string, openingId: string): void;
   updateOpening(moduleId: string, openingId: string, patch: Partial<ModuleOpening>): void;
+  /** syncModuleWalls 가 컴파일 결과로 setState — 개구부 충돌 목록. */
+  openingConflicts: OpeningConflict[];
+  setOpeningConflicts(c: OpeningConflict[]): void;
+  /** 공유벽 개구부 충돌에서 loser opening 에 suppressedBy=winner.openingId 기록. */
+  resolveConflict(
+    winner: { moduleId: string; openingId: string },
+    loser: { moduleId: string; openingId: string },
+  ): void;
+  /** suppressedBy 가 가리키는 opening 과 더 이상 같은 공유벽을 공유하지 않으면 해제. */
+  releaseStaleSuppressions(): void;
 }
 
 let seq = 0;
@@ -116,5 +127,67 @@ export const useSpaceModuleStore = create<SpaceModuleState>((set, get) => ({
           ? { ...m, openings: m.openings.map((o) => (o.id === openingId ? { ...o, ...patch } : o)) }
           : m),
     }));
+  },
+
+  openingConflicts: [],
+  setOpeningConflicts(c) { set({ openingConflicts: c }); },
+
+  resolveConflict(winner, loser) {
+    set((s) => ({
+      modules: s.modules.map((m) =>
+        m.id === loser.moduleId
+          ? {
+              ...m,
+              openings: m.openings.map((o) =>
+                o.id === loser.openingId ? { ...o, suppressedBy: winner.openingId } : o),
+            }
+          : m),
+    }));
+  },
+
+  releaseStaleSuppressions() {
+    const EPS = 1e-3;
+    const modules = get().modules;
+    const byId = new Map(modules.map((m) => [m.id, m]));
+
+    // (moduleId, side) → 변의 (horiz, fixed, lo, hi)
+    const edgeSpan = (moduleId: string, side: ModuleSide) => {
+      const e = moduleEdges(byId.get(moduleId)!)[side];
+      const horiz = Math.abs(e.az - e.bz) < EPS;
+      return horiz
+        ? { horiz, fixed: e.az, lo: Math.min(e.ax, e.bx), hi: Math.max(e.ax, e.bx) }
+        : { horiz, fixed: e.ax, lo: Math.min(e.az, e.bz), hi: Math.max(e.az, e.bz) };
+    };
+
+    let changed = false;
+    const next = modules.map((m) => {
+      let openingsChanged = false;
+      const openings = m.openings.map((o) => {
+        if (!o.suppressedBy) return o;
+        // winner opening 을 전체 모듈에서 검색
+        let winnerModuleId: string | null = null;
+        let winnerSide: ModuleSide | null = null;
+        for (const wm of modules) {
+          const w = wm.openings.find((x) => x.id === o.suppressedBy);
+          if (w) { winnerModuleId = wm.id; winnerSide = w.side; break; }
+        }
+        if (!winnerModuleId || !winnerSide) {
+          openingsChanged = true;
+          return { ...o, suppressedBy: undefined };
+        }
+        const a = edgeSpan(m.id, o.side);
+        const b = edgeSpan(winnerModuleId, winnerSide);
+        const collinear = a.horiz === b.horiz && Math.abs(a.fixed - b.fixed) < EPS;
+        const overlap = collinear ? Math.min(a.hi, b.hi) - Math.max(a.lo, b.lo) : -1;
+        if (!collinear || overlap <= EPS) {
+          openingsChanged = true;
+          return { ...o, suppressedBy: undefined };
+        }
+        return o;
+      });
+      if (openingsChanged) { changed = true; return { ...m, openings }; }
+      return m;
+    });
+    if (changed) set({ modules: next });
   },
 }));
