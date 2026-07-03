@@ -245,8 +245,10 @@ function ModelBody({ model, obj: rawObj }: { model: ImportedModel; obj: Object3D
                 modSel.select(null);
                 wallSel.clear();
                 cur.select(null);
+              } else if (cur.selectedId === model.id) {
+                cur.select(null); // 이미 바닥이 선택된 상태에서 재클릭 = 해제 (토글)
               } else {
-                cur.select(model.id); // 바닥 자체 선택 (토글: 이미 선택이면 해제)
+                cur.select(model.id); // 아무것도 없을 때 바닥 클릭 = 바닥 선택
               }
             })();
             return;
