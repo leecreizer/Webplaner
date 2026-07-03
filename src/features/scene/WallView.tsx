@@ -320,27 +320,7 @@ export function WallView({ wall, color = '#cccccc' }: { wall: Wall; color?: stri
 
       {/* 가이드 라인 + 삭제 버튼은 회전 group *밖*에 두어 좌표 변환 영향 안 받게 */}
       <DragGuideLines guides={dragGuides} />
-      {isSelected && (
-        <Html
-          position={midpoint}
-          center
-          zIndexRange={[100, 0]}
-          style={{ pointerEvents: 'none', userSelect: 'none' }}
-        >
-          <div style={{ transform: 'translate(-50%, calc(-100% - 13px))', pointerEvents: 'auto' }}>
-            <button
-              onClick={(e) => {
-                e.stopPropagation();
-                deleteWall(wall);
-              }}
-              title="삭제 (Del)"
-              style={deleteBtnStyle}
-            >
-              ✕ 삭제
-            </button>
-          </div>
-        </Html>
-      )}
+      {/* 삭제 버튼 제거 — 삭제는 Del/Backspace 키로 (상품 선택 UX 와 통일) */}
     </>
   );
 }

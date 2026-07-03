@@ -43,6 +43,7 @@ import { HostProvider } from './host/HostContext';
 import type { HostEventHandlers } from './host/HostEvents';
 import { useImportedModelStore } from '@/features/models/importedModelStore';
 import { useMeshSelectionStore } from '@/features/selection/meshSelectionStore';
+import { useSelectionStore } from '@/features/selection/selectionStore';
 import { useSpaceModuleStore } from '@/features/spaceModules/spaceModuleStore';
 import { ProductPlacement } from '@/features/placement/ProductPlacement';
 import { usePlacedProductStore } from '@/features/placement/placedProductStore';
@@ -114,6 +115,7 @@ export default function App({
             useImportedModelStore.getState().select(null);
             useMeshSelectionStore.getState().selectMesh(null);
             useSpaceModuleStore.getState().select(null);
+            useSelectionStore.getState().clear(); // 벽/노드 선택도 상품과 동일하게 해제
           }}
           shadows={{ type: PCFShadowMap }}
           // 디스플레이 해상도(devicePixelRatio)에 맞춰 렌더 — 고DPI 화면에서 선명. r3f Canvas 는

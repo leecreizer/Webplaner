@@ -223,23 +223,27 @@ function ModelBody({ model, obj: rawObj }: { model: ImportedModel; obj: Object3D
             // 그라운드 2단계 클릭: 뭔가 선택돼 있으면 → 전체 해제만 (빈 공간 클릭 역할),
             // 아무것도 선택 안 된 상태면 → 그라운드 자신을 선택 (재질 편집 등).
             void (async () => {
-              const [{ usePlacedProductStore }, { useMeshSelectionStore }, { useSpaceModuleStore }] =
+              const [{ usePlacedProductStore }, { useMeshSelectionStore }, { useSpaceModuleStore }, { useSelectionStore }] =
                 await Promise.all([
                   import('@/features/placement/placedProductStore'),
                   import('@/features/selection/meshSelectionStore'),
                   import('@/features/spaceModules/spaceModuleStore'),
+                  import('@/features/selection/selectionStore'),
                 ]);
               const placed = usePlacedProductStore.getState();
               const meshSel = useMeshSelectionStore.getState();
               const modSel = useSpaceModuleStore.getState();
               const cur = useImportedModelStore.getState();
+              const wallSel = useSelectionStore.getState();
               const anySelected =
                 placed.selectedIds.length > 0 || meshSel.selectedMeshKeys.length > 0 ||
-                modSel.selectedId !== null || (cur.selectedId !== null && cur.selectedId !== model.id);
+                modSel.selectedId !== null || wallSel.selectedWall !== null ||
+                (cur.selectedId !== null && cur.selectedId !== model.id);
               if (anySelected) {
                 if (placed.selectedIds.length > 0) { placed.select(null); window.parent?.postMessage({ type: 'hp3:deselected' }, '*'); }
                 meshSel.selectMesh(null);
                 modSel.select(null);
+                wallSel.clear();
                 cur.select(null);
               } else {
                 cur.select(model.id); // 바닥 자체 선택 (토글: 이미 선택이면 해제)
