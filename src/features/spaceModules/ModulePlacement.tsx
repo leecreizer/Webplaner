@@ -31,6 +31,8 @@ export function ModulePlacement() {
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (e.key !== 'r' && e.key !== 'R') return;
+      const t = e.target as HTMLElement | null;
+      if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.isContentEditable)) return;
       const s = useSpaceModuleStore.getState();
       if (!s.selectedId) return;
       const m = s.modules.find((mm) => mm.id === s.selectedId);
@@ -80,6 +82,7 @@ export function ModulePlacement() {
               position={[0, 0.015, 0]}
               onPointerDown={(e: ThreeEvent<PointerEvent>) => {
                 if (e.button !== 0) return;
+                if (useSpaceModuleStore.getState().pendingKind) return;
                 e.stopPropagation();
                 useSpaceModuleStore.getState().select(m.id);
                 // 드래그 시작 — 잡은 지점과 모듈 중심의 오프셋을 저장하고 포인터 캡처.
@@ -87,6 +90,7 @@ export function ModulePlacement() {
                 (e.target as Element).setPointerCapture(e.pointerId);
               }}
               onPointerMove={(e: ThreeEvent<PointerEvent>) => {
+                if (useSpaceModuleStore.getState().pendingKind) return;
                 const d = dragRef.current;
                 if (!d || d.id !== m.id) return;
                 e.stopPropagation();
