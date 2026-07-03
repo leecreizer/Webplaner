@@ -1,4 +1,5 @@
-import { Vector3 } from 'three';
+import { BoxGeometry, Vector3 } from 'three';
+import { useEditStore } from '@/features/editing/editStore';
 import { Node } from '@/domain/structures/Node';
 import { Wall } from '@/domain/structures/Wall';
 import { useLayoutStore, layoutRegistry } from '@/domain/state/layoutStore';
@@ -18,6 +19,9 @@ export function wallSourceModules(w: Wall): string[] | undefined {
 }
 
 /** 마지막 컴파일의 개구부 충돌 — UI(충돌 다이얼로그)가 구독. */
+/** 이번 sync 가 등록한 개구부 CSG 컷 op id — 다음 sync 에서 제거 후 재등록. */
+let _openingOpIds: number[] = [];
+
 export const lastConflicts: { current: OpeningConflict[] } = { current: [] };
 /** 마지막 컴파일 결과 벽 목록 — OpeningMarkers 가 참조. */
 export const lastCompiled: { current: CompiledWall[] } = { current: [] };
@@ -44,6 +48,13 @@ export function syncModuleWalls(): void {
     useSpaceModuleStore.getState().setOpeningConflicts(conflicts);
   }
 
+  // 0) 이전 sync 의 개구부 컷 op 제거 (벽 재생성과 함께 재등록)
+  {
+    const edit = useEditStore.getState();
+    for (const id of _openingOpIds) edit.removeOperation(id);
+    _openingOpIds = [];
+  }
+
   // 1) 기존 모듈발 벽 전부 제거 (그린 벽은 태그 없음 → 불변)
   for (const w of [...useLayoutStore.getState().walls]) {
     if (isModuleWall(w)) Wall.delete(w, layoutRegistry);
@@ -54,6 +65,24 @@ export function syncModuleWalls(): void {
     const end = Node.create(new Vector3(c.bx, 0, c.bz), layoutRegistry);
     const wall = Wall.create(start, end, layoutRegistry);
     (wall as unknown as Tagged)[MODULE_TAG] = c.sourceModuleIds;
+    // ⭐ 개구부 실제 구멍 — WallView 의 CSG(cut) 파이프라인에 world 좌표 박스 등록.
+    //   도어/개구부=바닥부터, 창호=sill 부터. 깊이는 벽 두께보다 살짝 크게(관통 보장).
+    if (c.openings.length > 0) {
+      const dx = c.bx - c.ax, dz = c.bz - c.az;
+      const len = Math.hypot(dx, dz) || 1;
+      const ux = dx / len, uz = dz / len;
+      const rotY = -Math.atan2(dz, dx);
+      const edit = useEditStore.getState();
+      for (const op of c.openings) {
+        const y0 = op.type === 'window' ? (op.sill ?? 0.9) : 0;
+        const geo = new BoxGeometry(op.width, op.height, wall.wallThick + 0.06);
+        geo.rotateY(rotY);
+        geo.translate(c.ax + ux * op.t, y0 + op.height / 2, c.az + uz * op.t);
+        _openingOpIds.push(edit.addOperation({
+          kind: 'cut', targetKind: 'wall', ownerId: wall.wallIndex, boxGeometry: geo,
+        }));
+      }
+    }
     wall.wallHeight = c.h;
   }
   // 3) 공간 재유도 — 그린 벽 + 모듈 벽 합산은 layoutStore 가 이미 하나의 목록

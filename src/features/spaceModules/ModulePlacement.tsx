@@ -4,6 +4,7 @@ import { useThree } from '@react-three/fiber';
 import { Plane, Raycaster, Vector2, Vector3 } from 'three';
 import { Edges, Html } from '@react-three/drei';
 import { useSpaceModuleStore, MODULE_PRESETS, OPENING_DEFAULTS } from './spaceModuleStore';
+import { useImportedModelStore, type PrimitiveKind } from '@/features/models/importedModelStore';
 import { moduleEdges } from './compileModules';
 import { computeModuleSnap } from './moduleSnap';
 import { OpeningMarkers } from './OpeningMarkers';
@@ -92,7 +93,25 @@ export function ModulePlacement() {
     const onDown = (ev: PointerEvent) => {
       if (ev.button !== 0) return;
       const hit = pick(ev);
-      if (!hit) return; // 벽 근처 아님 — 이벤트 통과(카메라 등 정상 동작)
+      if (!hit) {
+        // 벽 근처 아님 → 바닥 교점에 **독립 모델**로 배치 (도어/창호/개구부 프리미티브)
+        const r2 = el.getBoundingClientRect();
+        ndc.set(((ev.clientX - r2.left) / r2.width) * 2 - 1, -(((ev.clientY - r2.top) / r2.height) * 2 - 1));
+        ray.setFromCamera(ndc, camera);
+        if (!ray.ray.intersectPlane(ground, hitPt)) return;
+        ev.stopPropagation();
+        ev.preventDefault();
+        const kindMap: Record<'door'|'window'|'opening', PrimitiveKind> = {
+          door: 'door', window: 'window', opening: 'openingFrame',
+        };
+        const im = useImportedModelStore.getState();
+        const mid = im.addPrimitive(kindMap[pendingOpeningType]);
+        im.update(mid, { position: [hitPt.x, 0, hitPt.z] });
+        useSpaceModuleStore.getState().setPendingOpeningType(null);
+        setAttachHover(null);
+        setAttachCursor(null);
+        return;
+      }
       // 캡처 단계에서 소비 — 벽/바닥 선택 등 r3f 핸들러로 전달 차단
       ev.stopPropagation();
       ev.preventDefault();

@@ -49,7 +49,8 @@ export type MaterialPreset =
 
 /** 기본 도형(primitive) 종류. */
 export type PrimitiveKind =
-  | 'plane' | 'box' | 'sphere' | 'cone' | 'cylinder' | 'torus' | 'torusKnot' | 'teapot' | 'tube';
+  | 'plane' | 'box' | 'sphere' | 'cone' | 'cylinder' | 'torus' | 'torusKnot' | 'teapot' | 'tube'
+  | 'door' | 'window' | 'openingFrame';
 
 export interface ImportedModel {
   id: string;
@@ -61,7 +62,8 @@ export interface ImportedModel {
   format: 'glb' | 'gltf' | 'primitive';
   position: [number, number, number];
   rotation: [number, number, number]; // degrees
-  scale: number;
+  /** 축별 배율 [x(길이), y(높이), z(깊이)] — 기즈모 크기 모드 화살표로 개별 조절. */
+  scale: [number, number, number];
   visible: boolean;
   /** 로드 후 ImportedModels 가 채움 — 모델의 머티리얼 슬롯 목록. */
   materialSlots?: MaterialSlot[];
@@ -131,7 +133,7 @@ export const useImportedModelStore = create<ImportedModelState>((set) => ({
       format: formatOf(file.name),
       position: [0, 0, 0],
       rotation: [0, 0, 0],
-      scale: 1,
+      scale: [1, 1, 1],
       visible: true,
     };
     set((s) => ({ models: [...s.models, model], selectedId: id }));
@@ -147,7 +149,7 @@ export const useImportedModelStore = create<ImportedModelState>((set) => ({
       format: formatOf(url),
       position: [0, 0, 0],
       rotation: [0, 0, 0],
-      scale: 1,
+      scale: [1, 1, 1],
       visible: true,
     };
     set((s) => ({ models: [...s.models, model], selectedId: id }));
@@ -175,6 +177,7 @@ export const useImportedModelStore = create<ImportedModelState>((set) => ({
     const label: Record<PrimitiveKind, string> = {
       plane: '평면', box: '박스', sphere: '구', cone: '원뿔', cylinder: '실린더',
       torus: '토러스', torusKnot: '토러스매듭', teapot: '주전자', tube: '튜브',
+      door: '도어', window: '창호', openingFrame: '개구부',
     };
     const model: ImportedModel = {
       id,
@@ -182,10 +185,10 @@ export const useImportedModelStore = create<ImportedModelState>((set) => ({
       url: '',
       primitive: kind,
       format: 'primitive',
-      // 바닥(y=0) 위에 적당히 떠 있게 — geometry 마다 중심 다르므로 0.5m
-      position: [0, 0.5, 0],
+      // 바닥(y=0) 위에 적당히 떠 있게 — 도어/창호/개구부는 바닥 원점 geometry 라 y=0
+      position: [0, kind === 'door' || kind === 'window' || kind === 'openingFrame' ? 0 : 0.5, 0],
       rotation: [0, 0, 0],
-      scale: 1,
+      scale: [1, 1, 1],
       visible: true,
     };
     set((s) => ({ models: [...s.models, model], selectedId: id }));

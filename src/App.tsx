@@ -82,7 +82,7 @@ export default function App({
     const st = useImportedModelStore.getState();
     if (st.models.length === 0) {
       const id = st.addPrimitive('plane');
-      st.update(id, { scale: 10, position: [0, 0, 0] });
+      st.update(id, { scale: [10, 10, 10], position: [0, 0, 0] });
       st.select(null);
     }
   }, []);

@@ -37,8 +37,9 @@ export function OpeningMarkers() {
               rotation={[0, rotY, 0]}
             >
               <mesh>
-                {/* 문=갈색 박스 / 개구부=하늘색 반투명 / 창호=유리색 반투명 */}
-                <boxGeometry args={[op.width, op.height, isDoor ? 0.06 : 0.08]} />
+                {/* 문=갈색 박스 / 개구부=하늘색 반투명 / 창호=유리색 반투명.
+                    깊이는 벽 두께(0.2m)에 맞춰 구멍 단면을 채운다 */}
+                <boxGeometry args={[op.width, op.height, isDoor ? 0.06 : 0.2]} />
                 <meshStandardMaterial
                   color={isDoor ? '#92400e' : isWindow ? '#60a5fa' : '#7dd3fc'}
                   transparent={!isDoor}
@@ -48,7 +49,7 @@ export function OpeningMarkers() {
               {isWindow && (
                 // 창틀 표현 — 얇은 흰 프레임
                 <mesh>
-                  <boxGeometry args={[op.width + 0.06, op.height + 0.06, 0.05]} />
+                  <boxGeometry args={[op.width + 0.06, op.height + 0.06, 0.21]} />
                   <meshStandardMaterial color="#e2e8f0" transparent opacity={0.9} />
                 </mesh>
               )}

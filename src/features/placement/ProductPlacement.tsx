@@ -136,7 +136,8 @@ function BoxMesh({ p, sel }: { p: PlacedProduct; sel: boolean }) {
   return (
     <mesh position={[0, ((p.lift ?? 0) + p.h / 2) * M, 0]} castShadow receiveShadow>
       <boxGeometry args={[p.w * M, p.h * M, p.d * M]} />
-      <meshStandardMaterial color={sel ? '#b98a3e' : '#c9a063'} roughness={0.6} />
+      {/* 어드민이 컬러를 지정하면 그 색으로(선택 표시는 엣지로), 없으면 기존 우드 톤 */}
+      <meshStandardMaterial color={p.color ?? (sel ? '#b98a3e' : '#c9a063')} roughness={0.6} />
       {sel && <Edges scale={1.001} threshold={15} color="#22d3ee" />}
     </mesh>
   );
@@ -429,6 +430,7 @@ function FittedModel({ url, p, sel, ghost = false }: { url: string; p: PlacedPro
       if (v) {
         patch.name = v.name;
         patch.code = v.code;
+        if (v.color != null) patch.color = v.color;
       }
       st.update(door.id, patch);
     }
@@ -641,7 +643,7 @@ export function ProductPlacement() {
     const onMsg = (e: MessageEvent) => {
       const d = e.data as { type?: string } & Partial<PendingProduct>;
       if (d && d.type === 'hp3:place-product') {
-        setPending({ name: d.name ?? '상품', code: d.code, w: d.w || 600, d: d.d || 600, h: d.h || 600, lift: d.lift || 0, modelUrl: d.modelUrl });
+        setPending({ name: d.name ?? '상품', code: d.code, w: d.w || 600, d: d.d || 600, h: d.h || 600, lift: d.lift || 0, modelUrl: d.modelUrl, color: d.color });
       }
       if (d && d.type === 'hp3:toggle-doors') {
         // 도어 열림/닫힘 토글(애니메이션 확인). data.open이 boolean이면 그 값으로, 없으면 토글.
@@ -666,12 +668,13 @@ export function ProductPlacement() {
         if (d.code != null) patch.code = d.code;
         if (d.name != null) patch.name = d.name;
         if (d.modelUrl != null) patch.modelUrl = d.modelUrl;
+        if (d.color != null) patch.color = d.color;
         for (const id of targets) st.update(id, patch);
         return;
       }
       if (d && d.type === 'hp3:attach-doors') {
         // 선택된 몸통에 DP 매칭 도어들을 POS(L/R)에 자동 배치 (시뮬레이션: 박스)
-        const ad = e.data as { bodyW?: number; bodyD?: number; bodyH?: number; doors?: { code?: string; name?: string; w?: number; d?: number; h?: number; pos?: string; modelUrl?: string; masterW?: number; masterH?: number; masterD?: number; modelCode?: string; itemCode?: string; variants?: DoorVariant[]; mirror?: boolean }[] };
+        const ad = e.data as { bodyW?: number; bodyD?: number; bodyH?: number; doors?: { code?: string; name?: string; w?: number; d?: number; h?: number; pos?: string; modelUrl?: string; color?: string; masterW?: number; masterH?: number; masterD?: number; modelCode?: string; itemCode?: string; variants?: DoorVariant[]; mirror?: boolean }[] };
         const st = usePlacedProductStore.getState();
         const bodyId = st.selectedIds[0] ?? (st.placed.length ? st.placed[st.placed.length - 1].id : null);
         const body = st.placed.find((p) => p.id === bodyId);
@@ -686,7 +689,7 @@ export function ProductPlacement() {
           const dx = side * bw / 4;                            // 몸통 폭의 1/4 지점
           const dz = bd / 2;                                   // 몸통 앞면
           st.placeAt({
-            name: dr.name ?? '도어', code: dr.code, w: dr.w || 600, d: dr.d || 30, h: dr.h || body.h, lift: body.lift ?? 0, modelUrl: dr.modelUrl,
+            name: dr.name ?? '도어', code: dr.code, w: dr.w || 600, d: dr.d || 30, h: dr.h || body.h, lift: body.lift ?? 0, modelUrl: dr.modelUrl, color: dr.color,
             // 몸통(베이스)에 연결 — 몸통 크기 변경 시 이 도어를 자동으로 새 슬롯 크기/위치로 갱신.
             parentId: body.id, slotPos,
             // 견적용 마스터 사이즈 + 식별코드(admin 카탈로그 변형 상품) + 사이즈 변형 테이블 + 미러(피봇 보정).
@@ -700,9 +703,9 @@ export function ProductPlacement() {
         // 선택된 배치 상품이 있으면 그 자리에서 교체, 없으면 새 배치 대기
         const st = usePlacedProductStore.getState();
         if (st.selectedId) {
-          st.update(st.selectedId, { name: d.name ?? '상품', code: d.code, w: d.w || 600, d: d.d || 600, h: d.h || 600, lift: d.lift || 0 });
+          st.update(st.selectedId, { name: d.name ?? '상품', code: d.code, w: d.w || 600, d: d.d || 600, h: d.h || 600, lift: d.lift || 0, color: d.color });
         } else {
-          setPending({ name: d.name ?? '상품', code: d.code, w: d.w || 600, d: d.d || 600, h: d.h || 600, lift: d.lift || 0 });
+          setPending({ name: d.name ?? '상품', code: d.code, w: d.w || 600, d: d.d || 600, h: d.h || 600, lift: d.lift || 0, color: d.color });
         }
       }
     };

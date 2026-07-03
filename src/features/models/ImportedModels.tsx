@@ -203,7 +203,7 @@ function ModelBody({ model, obj: rawObj }: { model: ImportedModel; obj: Object3D
         (g.rotation.y * 180) / Math.PI,
         (g.rotation.z * 180) / Math.PI,
       ],
-      scale: g.scale.x,
+      scale: [g.scale.x, g.scale.y, g.scale.z],
     });
   };
 
@@ -271,7 +271,7 @@ function collectTextureInfo(mat: MeshPhysicalMaterial): TextureInfo[] {
 }
 
 /** primitive 종류 → geometry. 인테리어 스케일(~0.5m). */
-function buildPrimitiveGeometry(kind: PrimitiveKind): BufferGeometry {
+function buildPrimitiveGeometry(kind: Exclude<PrimitiveKind, 'door' | 'window' | 'openingFrame'>): BufferGeometry {
   switch (kind) {
     case 'plane': return new PlaneGeometry(1, 1);
     case 'box': return new BoxGeometry(0.6, 0.6, 0.6);
@@ -296,7 +296,11 @@ function buildPrimitiveGeometry(kind: PrimitiveKind): BufferGeometry {
 
 /** primitive geometry + 기본 머티리얼로 Group 생성 (ModelBody 가 Physical 로 변환). */
 function buildPrimitiveGroup(kind: PrimitiveKind): Object3D {
-  const geo = buildPrimitiveGeometry(kind);
+  // 건축 요소(도어/창호/개구부)는 다중 메시 그룹 — 바닥(y=0) 원점 기준
+  if (kind === 'door' || kind === 'window' || kind === 'openingFrame') {
+    return buildArchGroup(kind);
+  }
+  const geo = buildPrimitiveGeometry(kind as Exclude<PrimitiveKind, 'door' | 'window' | 'openingFrame'>);
   const mat = new MeshStandardMaterial({
     color: kind === 'plane' ? '#ffffff' : '#bfc4cc',
     roughness: 0.55,
@@ -309,6 +313,48 @@ function buildPrimitiveGroup(kind: PrimitiveKind): Object3D {
   if (kind === 'plane') mesh.rotation.x = -Math.PI / 2;
   const g = new Group();
   g.add(mesh);
+  return g;
+}
+
+/**
+ * 건축 요소 primitive — 도어(패널) / 창호(프레임+유리) / 개구부(ㄷ자 프레임).
+ * 바닥(y=0) 원점, 벽 두께(0.2m) 기준 깊이. 아무 곳에나 독립 배치 가능하며
+ * 모듈 벽 근처 클릭 시엔 개구부 데이터로 부착된다(ModulePlacement).
+ */
+function buildArchGroup(kind: 'door' | 'window' | 'openingFrame'): Object3D {
+  const g = new Group();
+  const mesh = (geo: BufferGeometry, mat: MeshStandardMaterial, y: number) => {
+    const m = new Mesh(geo, mat);
+    m.position.y = y;
+    g.add(m);
+    return m;
+  };
+  if (kind === 'door') {
+    const mat = new MeshStandardMaterial({ color: '#8b5a2b', roughness: 0.6 });
+    mat.name = 'door';
+    mesh(new BoxGeometry(0.9, 2.1, 0.05), mat, 1.05); // 문짝 패널
+  } else if (kind === 'window') {
+    const frame = new MeshStandardMaterial({ color: '#e2e8f0', roughness: 0.4 });
+    frame.name = 'window-frame';
+    const glass = new MeshStandardMaterial({ color: '#93c5fd', roughness: 0.05, transparent: true, opacity: 0.35 });
+    glass.name = 'window-glass';
+    const W = 1.2, H = 1.2, T = 0.06, D = 0.1, SILL = 0.9;
+    mesh(new BoxGeometry(W, T, D), frame, SILL + T / 2);            // 하단 프레임
+    mesh(new BoxGeometry(W, T, D), frame, SILL + H - T / 2);        // 상단 프레임
+    const jamb = new BoxGeometry(T, H - 2 * T, D);
+    mesh(jamb, frame, SILL + H / 2).position.x = -(W - T) / 2;      // 좌 프레임
+    mesh(jamb.clone(), frame, SILL + H / 2).position.x = (W - T) / 2; // 우 프레임
+    mesh(new BoxGeometry(W - 2 * T, H - 2 * T, 0.02), glass, SILL + H / 2); // 유리
+  } else {
+    // 개구부 — ㄷ자(상단+좌우) 몰딩 프레임
+    const mat = new MeshStandardMaterial({ color: '#d6d3d1', roughness: 0.7 });
+    mat.name = 'opening-frame';
+    const W = 1.0, H = 2.1, T = 0.08, D = 0.22;
+    mesh(new BoxGeometry(W, T, D), mat, H - T / 2);                  // 상단
+    const jamb = new BoxGeometry(T, H - T, D);
+    mesh(jamb, mat, (H - T) / 2).position.x = -(W - T) / 2;          // 좌
+    mesh(jamb.clone(), mat, (H - T) / 2).position.x = (W - T) / 2;   // 우
+  }
   return g;
 }
 

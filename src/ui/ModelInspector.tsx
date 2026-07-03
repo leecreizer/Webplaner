@@ -99,13 +99,19 @@ export function ModelInspector() {
       </Section>
 
       <Section title="크기">
+        {/* 축별 배율 — 씬의 크기 기즈모(빨/초/파 핸들 드래그)와 동일 값 */}
+        <Vec3 value={model.scale} onChange={(i, v) => {
+          const sc: [number, number, number] = [...model.scale];
+          sc[i] = Math.max(0.01, v);
+          update(model.id, { scale: sc });
+        }} step={0.05} />
         <NumberRow
-          label="scale"
-          value={model.scale}
+          label="균등"
+          value={model.scale[0]}
           min={0.01}
           max={20}
           step={0.05}
-          onChange={(v) => update(model.id, { scale: v })}
+          onChange={(v) => update(model.id, { scale: [v, v, v] })}
         />
       </Section>
 
@@ -113,7 +119,7 @@ export function ModelInspector() {
 
       <div style={{ display: 'flex', gap: 6 }}>
         <button
-          onClick={() => update(model.id, { position: [0, 0, 0], rotation: [0, 0, 0], scale: 1 })}
+          onClick={() => update(model.id, { position: [0, 0, 0], rotation: [0, 0, 0], scale: [1, 1, 1] })}
           style={resetBtnStyle}
         >
           ↺ 리셋
