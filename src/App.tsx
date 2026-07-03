@@ -43,6 +43,9 @@ import type { HostEventHandlers } from './host/HostEvents';
 import { useImportedModelStore } from '@/features/models/importedModelStore';
 import { ProductPlacement } from '@/features/placement/ProductPlacement';
 import { usePlacedProductStore } from '@/features/placement/placedProductStore';
+import { ModulePlacement } from '@/features/spaceModules/ModulePlacement';
+import { startModuleWallSync } from '@/features/spaceModules/syncModuleWalls';
+import { ModulePalette } from './ui/ModulePalette';
 
 /**
  * HomePlanner3 루트 컴포넌트.
@@ -81,10 +84,13 @@ export default function App({
       st.select(null);
     }
   }, []);
+  // 공간 모듈 → layoutStore 벽 실시간 동기화 (Task 3)
+  useEffect(() => startModuleWallSync(), []);
   return (
     <HostProvider handlers={handlers}>
       <div style={{ position: 'relative', width: '100%', height: '100%' }}>
         {showToolbar && <Toolbar />}
+        <ModulePalette />
         {showLightingPanel && <LightingPanel />}
         {showLightingPanel && <LightInspector />}
         {showLightingPanel && <MeshInspector />}
@@ -124,6 +130,7 @@ export default function App({
           <PlanScene showCeiling={showCeiling} showProducts={showProducts} />
           <ImportedModels />
           <ProductPlacement />
+          <ModulePlacement />
           <SpaceLightmap />
           <SceneLightProbe />
           <ReflectionProbe />

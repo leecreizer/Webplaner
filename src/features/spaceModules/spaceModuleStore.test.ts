@@ -45,4 +45,11 @@ describe('spaceModuleStore', () => {
     useSpaceModuleStore.getState().removeOpening(id, oid);
     expect(useSpaceModuleStore.getState().modules[0].openings).toHaveLength(0);
   });
+
+  it('pendingKind 설정/해제', () => {
+    useSpaceModuleStore.getState().setPendingKind('kitchen');
+    expect(useSpaceModuleStore.getState().pendingKind).toBe('kitchen');
+    useSpaceModuleStore.getState().setPendingKind(null);
+    expect(useSpaceModuleStore.getState().pendingKind).toBeNull();
+  });
 });

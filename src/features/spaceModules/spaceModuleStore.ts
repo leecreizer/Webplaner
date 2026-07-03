@@ -46,6 +46,9 @@ const DEFAULT_WALL_H = 2.4;
 interface SpaceModuleState {
   modules: SpaceModule[];
   selectedId: string | null;
+  /** 팔레트에서 선택했지만 아직 바닥에 배치 전인 모듈 종류. */
+  pendingKind: ModuleKind | null;
+  setPendingKind(k: ModuleKind | null): void;
   add(kind: ModuleKind, x: number, z: number): string;
   remove(id: string): void;
   update(id: string, patch: Partial<SpaceModule>): void;
@@ -61,6 +64,9 @@ const newId = (p: string) => `${p}-${Date.now().toString(36)}-${++seq}`;
 export const useSpaceModuleStore = create<SpaceModuleState>((set, get) => ({
   modules: [],
   selectedId: null,
+  pendingKind: null,
+
+  setPendingKind(k) { set({ pendingKind: k }); },
 
   add(kind, x, z) {
     const preset = MODULE_PRESETS[kind];
