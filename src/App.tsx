@@ -38,6 +38,7 @@ import { MeshInspector } from './ui/MeshInspector';
 import { SceneOutliner } from './ui/SceneOutliner';
 import { BuiltinLightInspector } from './ui/BuiltinLightInspector';
 import { ModelInspector } from './ui/ModelInspector';
+import { SpaceModuleInspector } from './ui/SpaceModuleInspector';
 import { HostProvider } from './host/HostContext';
 import type { HostEventHandlers } from './host/HostEvents';
 import { useImportedModelStore } from '@/features/models/importedModelStore';
@@ -97,6 +98,7 @@ export default function App({
         {showLightingPanel && <SceneOutliner />}
         {showLightingPanel && <BuiltinLightInspector />}
         {showLightingPanel && <ModelInspector />}
+        <SpaceModuleInspector />
         <Canvas
           // 빈 곳 클릭(씬 오브젝트 미적중) → 배치 상품 선택 해제. 기즈모 클릭은 이벤트를
           // TransformControls가 가로채므로 여기로 오지 않음.
