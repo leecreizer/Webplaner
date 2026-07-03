@@ -220,16 +220,31 @@ function ModelBody({ model, obj: rawObj }: { model: ImportedModel; obj: Object3D
           // 전체 선택 해제만 수행. (재질 편집은 씬 트리에서 선택해 사용)
           if (model.isGround) {
             e.stopPropagation();
-            select(null);
-            // 그라운드가 클릭을 소비하므로 onPointerMissed 대신 여기서 전체 해제
-            import('@/features/placement/placedProductStore').then(({ usePlacedProductStore }) => {
-              const st = usePlacedProductStore.getState();
-              if (st.selectedIds.length > 0) { st.select(null); window.parent?.postMessage({ type: 'hp3:deselected' }, '*'); }
-            });
-            import('@/features/selection/meshSelectionStore').then(({ useMeshSelectionStore }) =>
-              useMeshSelectionStore.getState().selectMesh(null));
-            import('@/features/spaceModules/spaceModuleStore').then(({ useSpaceModuleStore }) =>
-              useSpaceModuleStore.getState().select(null));
+            // 그라운드 2단계 클릭: 뭔가 선택돼 있으면 → 전체 해제만 (빈 공간 클릭 역할),
+            // 아무것도 선택 안 된 상태면 → 그라운드 자신을 선택 (재질 편집 등).
+            void (async () => {
+              const [{ usePlacedProductStore }, { useMeshSelectionStore }, { useSpaceModuleStore }] =
+                await Promise.all([
+                  import('@/features/placement/placedProductStore'),
+                  import('@/features/selection/meshSelectionStore'),
+                  import('@/features/spaceModules/spaceModuleStore'),
+                ]);
+              const placed = usePlacedProductStore.getState();
+              const meshSel = useMeshSelectionStore.getState();
+              const modSel = useSpaceModuleStore.getState();
+              const cur = useImportedModelStore.getState();
+              const anySelected =
+                placed.selectedIds.length > 0 || meshSel.selectedMeshKeys.length > 0 ||
+                modSel.selectedId !== null || (cur.selectedId !== null && cur.selectedId !== model.id);
+              if (anySelected) {
+                if (placed.selectedIds.length > 0) { placed.select(null); window.parent?.postMessage({ type: 'hp3:deselected' }, '*'); }
+                meshSel.selectMesh(null);
+                modSel.select(null);
+                cur.select(null);
+              } else {
+                cur.select(model.id); // 바닥 자체 선택 (토글: 이미 선택이면 해제)
+              }
+            })();
             return;
           }
           e.stopPropagation();
