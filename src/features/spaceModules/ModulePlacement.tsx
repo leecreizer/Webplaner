@@ -295,6 +295,26 @@ export function ModulePlacement() {
             <Html center position={[0, 0.05, 0]} style={{ pointerEvents: 'none', fontSize: 11, color: '#334155', fontWeight: 600, textShadow: '0 0 3px #fff' }}>
               {m.name}
             </Html>
+            {/* 선택 시 회전 버튼 — 클릭당 +90° (R 키와 동일). 모듈 우상단 코너에 표시 */}
+            {sel && (
+              <Html center position={[m.w / 2, 0.05, -m.d / 2]} zIndexRange={[90, 0]}>
+                <button
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    const st = useSpaceModuleStore.getState();
+                    st.update(m.id, { ry: (((m.ry + 90) % 360) as 0 | 90 | 180 | 270) });
+                  }}
+                  title="90° 회전 (R)"
+                  style={{
+                    width: 26, height: 26, borderRadius: '50%', cursor: 'pointer',
+                    border: '1px solid #7c3aed', background: '#a78bfa', color: '#1e1b4b',
+                    fontSize: 14, fontWeight: 700, lineHeight: '22px',
+                  }}
+                >
+                  ↻
+                </button>
+              </Html>
+            )}
           </group>
         );
       })}
