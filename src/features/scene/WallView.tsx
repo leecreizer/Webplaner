@@ -204,13 +204,19 @@ export function WallView({ wall, color = '#cccccc' }: { wall: Wall; color?: stri
         const pt = new Vector3();
         return rc.ray.intersectPlane(new Plane(new Vector3(0, 1, 0), 0), pt) ? [pt.x, pt.z] : null;
       };
+      // 그린 벽 드래그와 동일 UX — 클릭/드래그 판별 임계값 + grabbing 커서
+      const downX0 = e.clientX, downY0 = e.clientY;
+      let didDragModule = false;
       const onMove = (ev: PointerEvent) => {
+        if (!didDragModule && Math.hypot(ev.clientX - downX0, ev.clientY - downY0) < CLICK_VS_DRAG_PX) return;
+        if (!didDragModule) { didDragModule = true; el.style.cursor = 'grabbing'; }
         const gp = toGround(ev.clientX, ev.clientY);
         if (gp) resizeModuleEdge(hit.moduleId, hit.side, gp[0], gp[1]);
       };
       const onUp = () => {
         window.removeEventListener('pointermove', onMove);
         window.removeEventListener('pointerup', onUp);
+        el.style.cursor = '';
         setModuleDragging(false); // 미룬 sync 실행 → 벽 재생성
       };
       window.addEventListener('pointermove', onMove);

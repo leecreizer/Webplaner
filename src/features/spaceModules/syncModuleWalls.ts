@@ -68,7 +68,7 @@ function restoreVisibilityBySig(snap: Map<string, { hidden?: true; removed?: tru
 }
 
 /** 모듈발 벽 태그 — 도메인 클래스 무수정 확장 (스펙 '기존 구조 무변경' 원칙). */
-const MODULE_TAG: unique symbol = Symbol('spaceModuleWall');
+const MODULE_TAG = Symbol.for('hp3.spaceModuleWall');
 type Tagged = { [MODULE_TAG]?: string[] };
 
 export function isModuleWall(w: Wall): boolean {
