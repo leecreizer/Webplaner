@@ -25,12 +25,12 @@ export function wallSourceModules(w: Wall): string[] | undefined {
  * 마우스 추종이 끊긴다 → 드래그 동안 sync 를 미루고, 드래그 종료 시 1회 실행.
  */
 let _dragging = false;
-let _pendingWhileDrag = false;
+let _lastDragSync = 0;
 
 export function setModuleDragging(dragging: boolean): void {
   _dragging = dragging;
-  if (!dragging && _pendingWhileDrag) {
-    _pendingWhileDrag = false;
+  if (!dragging) {
+    // 드래그 종료 — 최종 상태로 즉시 1회 동기화
     syncModuleWalls();
   }
 }
@@ -111,7 +111,13 @@ export function startModuleWallSync(): () => void {
   const unsub = useSpaceModuleStore.subscribe(() => {
     if (timer) clearTimeout(timer);
     timer = setTimeout(() => {
-      if (_dragging) { _pendingWhileDrag = true; return; } // 드래그 종료 시 실행
+      if (_dragging) {
+        // 드래그 중엔 150ms 스로틀 — 벽이 실시간으로 따라오되(시각 피드백)
+        // 매 이벤트 전량 재생성으로 인한 스톨은 제한
+        const now = performance.now();
+        if (now - _lastDragSync < 150) return; // 다음 store 변경이 다시 스케줄함
+        _lastDragSync = now;
+      }
       syncModuleWalls();
     }, 50);
   });

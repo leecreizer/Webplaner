@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useThree } from '@react-three/fiber';
+import { useShallow } from 'zustand/react/shallow';
 import { Html } from '@react-three/drei';
 import { DoubleSide, Matrix4, Plane, Quaternion, Raycaster, Vector2, Vector3 } from 'three';
 import type { ThreeEvent } from '@react-three/fiber';
@@ -45,10 +46,10 @@ export function WallView({ wall, color = '#cccccc' }: { wall: Wall; color?: stri
   // editStore.operations 자체를 ref-stable하게 구독 후, useMemo로 이 wall 것만 필터.
   // selector 안에서 filter()를 직접 호출하면 매번 새 배열 ref가 반환돼 zustand가 변경 감지를
   // 매 렌더마다 trigger해 무한 루프가 발생한다.
-  const allEditOps = useEditStore((s) => s.operations);
-  const wallOperations = useMemo(
-    () => allEditOps.filter((o) => o.targetKind === 'wall' && o.ownerId === wall.wallIndex),
-    [allEditOps, wall.wallIndex],
+  // per-wall shallow 구독 — operations 배열 참조가 바뀌어도 이 벽의 op 목록이
+  // 동일하면 리렌더/CSG 재평가를 건너뛴다 (이전: 벽 1개 변경에 전체 벽 재평가).
+  const wallOperations = useEditStore(
+    useShallow((s) => s.operations.filter((o) => o.targetKind === 'wall' && o.ownerId === wall.wallIndex)),
   );
   const { gl, camera } = useThree();
   const effectiveHeight = viewMode === '2D' ? TOPVIEW_WALL_THICKNESS : wall.wallHeight;
