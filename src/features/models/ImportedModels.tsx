@@ -24,6 +24,7 @@ import {
 } from 'three';
 import { TeapotGeometry } from 'three/examples/jsm/geometries/TeapotGeometry.js';
 import { useGLTF, TransformControls } from '@react-three/drei';
+import { registerGizmo, isGizmoBusy } from './gizmoGuard';
 import { clone as cloneSkeleton } from 'three/examples/jsm/utils/SkeletonUtils.js';
 import { standardToPhysical } from '@/domain/materials/standardToPhysical';
 import {
@@ -83,7 +84,13 @@ function ModelBody({ model, obj: rawObj }: { model: ImportedModel; obj: Object3D
   const update = useImportedModelStore((s) => s.update);
   const setMaterialSlots = useImportedModelStore((s) => s.setMaterialSlots);
   const groupRef = useRef<Group>(null);
+  const gizmoCleanupRef = useRef<(() => void) | null>(null);
   const selected = selectedId === model.id;
+  // 선택 해제/unmount 시 기즈모 가드 등록 해제
+  useEffect(() => {
+    if (!selected && gizmoCleanupRef.current) { gizmoCleanupRef.current(); gizmoCleanupRef.current = null; }
+    return () => { gizmoCleanupRef.current?.(); gizmoCleanupRef.current = null; };
+  }, [selected]);
 
   // 머티리얼 → MeshPhysicalMaterial 인스턴스별 변환 + 슬롯 수집 (full PBR 편집 + 캐시 오염 방지)
   const { obj, matMap, slots } = useMemo(() => {
@@ -216,6 +223,8 @@ function ModelBody({ model, obj: rawObj }: { model: ImportedModel; obj: Object3D
         scale={model.scale}
         onPointerDown={(e) => {
           if (e.button !== 0) return;
+          // 기즈모 핸들 조작 중이면 선택 가로채기 금지 (핸들 뒤 메시 오선택 방지)
+          if (isGizmoBusy()) return;
           // 그라운드(기본 바닥 plane)는 선택을 가로채지 않는다 — '빈 공간 클릭'과 동일하게
           // 전체 선택 해제만 수행. (재질 편집은 씬 트리에서 선택해 사용)
           if (model.isGround) {
@@ -263,6 +272,12 @@ function ModelBody({ model, obj: rawObj }: { model: ImportedModel; obj: Object3D
 
       {selected && groupRef.current && (
         <TransformControls
+          // 기즈모 가드 등록 — 핸들 호버/드래그 중엔 뒤 메시가 선택을 뺏지 못하게
+          ref={(tc) => {
+            if (!tc) return;
+            const un = registerGizmo(tc as unknown as { axis: string | null; dragging: boolean });
+            gizmoCleanupRef.current = un;
+          }}
           object={groupRef.current}
           mode={gizmoMode}
           onMouseUp={commitTransform}

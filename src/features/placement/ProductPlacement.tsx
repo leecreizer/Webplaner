@@ -3,6 +3,7 @@ import { Box3, DoubleSide, Group, Mesh, MeshStandardMaterial, Object3D, Quaterni
 import { standardToPhysical } from '@/domain/materials/standardToPhysical';
 import { useFrame, useThree } from '@react-three/fiber';
 import { requestShadowUpdate } from '@/engine/lighting/ShadowDemand';
+import { registerGizmo, isGizmoBusy } from '@/features/models/gizmoGuard';
 import { Edges, TransformControls, useGLTF } from '@react-three/drei';
 import { HelperScaler, isHelperRegionName, replaceableSizeOf, pickReplaceableSize } from '@/domain/products/HelperScaler';
 import { readDpTypes, readDoorSlots } from '@/domain/products/ModelMarkers';
@@ -554,6 +555,12 @@ export function ProductPlacement() {
   const [pivotObj, setPivotObj] = useState<Object3D | null>(null);
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const tcRef = useRef<any>(null); // TransformControls 인스턴스 — 핸들 위면 .axis 설정됨
+  // 기즈모 가드 등록 — 핸들 호버/드래그 중 씬 선택 차단
+  useEffect(() => {
+    const tc = tcRef.current;
+    if (!tc) return;
+    return registerGizmo(tc as { axis: string | null; dragging: boolean });
+  });
   const lastPivot = useRef<{ x: number; z: number; ry: number }>({ x: 0, z: 0, ry: 0 });
   const selectedSet = new Set(selectedIds);
   // 도어별 최대 열림 각(충돌 시 교차 직전까지). 배치/각도 변경 시 재계산.
@@ -574,6 +581,7 @@ export function ProductPlacement() {
   // 박스 클릭 선택 (Shift = 다중 토글), 호스트에 선택 정보 전송.
   // useCallback: PlacedItem memo가 유지되도록 안정 참조. (select는 zustand 액션이라 안정)
   const onBoxDown = useCallback((id: string, code: string | undefined, name: string, shift: boolean) => {
+    if (isGizmoBusy()) return; // 기즈모 핸들 조작 중 — 뒤 상품 오선택 방지
     select(id, shift);
     const ids = usePlacedProductStore.getState().selectedIds;
     if (ids.length <= 1) window.parent?.postMessage({ type: 'hp3:selected', code, name }, '*');

@@ -5,6 +5,7 @@ import { BoxGeometry as BoxGeometryCtor, Plane, Raycaster, Vector2, Vector3 } fr
 import { Edges, Html } from '@react-three/drei';
 import { useSpaceModuleStore, MODULE_PRESETS, OPENING_DEFAULTS } from './spaceModuleStore';
 import { useImportedModelStore, type PrimitiveKind } from '@/features/models/importedModelStore';
+import { isGizmoBusy } from '@/features/models/gizmoGuard';
 import { useViewStore } from '@/engine/stores/viewStore';
 import { moduleEdges } from './compileModules';
 import { computeModuleSnap } from './moduleSnap';
@@ -258,6 +259,7 @@ export function ModulePlacement() {
               position={[0, 0.015, 0]}
               onPointerDown={(e: ThreeEvent<PointerEvent>) => {
                 if (e.button !== 0) return;
+                if (isGizmoBusy()) return; // 기즈모 조작 중 모듈 오선택 방지
                 { const st = useSpaceModuleStore.getState(); if (st.pendingKind || st.pendingOpeningType || st.movingOpening) return; }
                 e.stopPropagation();
                 useSpaceModuleStore.getState().select(m.id);
@@ -268,6 +270,7 @@ export function ModulePlacement() {
                 (e.target as Element).setPointerCapture(e.pointerId);
               }}
               onPointerMove={(e: ThreeEvent<PointerEvent>) => {
+                if (isGizmoBusy()) return; // 기즈모 조작 중 모듈 오선택 방지
                 { const st = useSpaceModuleStore.getState(); if (st.pendingKind || st.pendingOpeningType || st.movingOpening) return; }
                 const d = dragRef.current;
                 if (!d || d.id !== m.id) return;
