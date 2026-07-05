@@ -3,6 +3,7 @@ import { useThree } from '@react-three/fiber';
 import { Plane, Vector2, Vector3, Raycaster } from 'three';
 import { Line } from '@react-three/drei';
 import { useWallDrawingStore, type GuideLine, type PreviewHoverType } from '@/features/drawing/wallDrawingStore';
+import { useSpaceModuleStore } from '@/features/spaceModules/spaceModuleStore';
 import { useViewStore } from '@/engine/stores/viewStore';
 import { Node } from '@/domain/structures/Node';
 import { Wall } from '@/domain/structures/Wall';
@@ -545,28 +546,18 @@ export function WallDrawingTool() {
         new Vector3(minX, 0, maxZ),
       ];
 
-      // 코너가 기존 노드/벽 위에 떨어지면 흡수·분할 → 사각형이 기존 그래프에 자연스럽게 합쳐짐
-      const nodes = corners.map((c) => resolveOrCreateNode(c));
-
-      // 두께 적용 — Toolbar 슬라이더 값
-      const wallThick = useViewStore.getState().wallThickPreview;
-      const newWalls: Wall[] = [];
-      for (let i = 0; i < 4; i++) {
-        const a = nodes[i];
-        const b = nodes[(i + 1) % 4];
-        if (a === b) continue;
-        // 4변 각각도 기존 벽과 교차 시 분할 — 인접한 사각형 두 개를 그려도 변이 자연스럽게 합쳐짐
-        const sub = createWallWithIntersections(a, b, wallThick);
-        for (const w of sub) newWalls.push(w);
+      // ⭐ 공간 그리기 = **공간 모듈 생성** — 모듈끼리의 스냅/공유벽 결합·해제/이동/
+      // 변 크기조절/개구부 설계를 그대로 획득한다. (이전: 그린 벽 4개 직접 생성 —
+      // 모듈과 결합이 안 되고 편집 기능도 달랐음)
+      void corners;
+      {
+        const sm = useSpaceModuleStore.getState();
+        const id = sm.add('custom', (minX + maxX) / 2, (minZ + maxZ) / 2);
+        sm.update(id, {
+          w: Math.round((maxX - minX) * 100) / 100,
+          d: Math.round((maxZ - minZ) * 100) / 100,
+        });
       }
-
-      // 새 벽 + 양 끝 노드에 연결된 모든 벽 face 갱신
-      const touched = new Set<Wall>(newWalls);
-      for (const n of nodes) for (const w of n.walls) touched.add(w);
-      refreshFaces(touched);
-
-      // 사각형은 본질적으로 폐쇄 — 즉시 floor 생성
-      recomputeSpaces();
       // 그리기 모드는 ESC 누를 때까지 유지 — 다음 드래그를 위해 rect 상태만 리셋
       const store = useWallDrawingStore.getState();
       store.setRectStart(null);

@@ -1,5 +1,7 @@
 import { moduleEdges } from './compileModules';
 import type { SpaceModule } from './spaceModuleStore';
+import { useLayoutStore } from '@/domain/state/layoutStore';
+import { isModuleWall } from './syncModuleWalls';
 
 /** 스냅 임계 거리(m). */
 export const MODULE_SNAP_DIST = 0.15;
@@ -23,9 +25,23 @@ export function computeModuleSnap(
   let cornerDx = 0, cbx = MODULE_SNAP_DIST;
   let cornerDz = 0, cbz = MODULE_SNAP_DIST;
 
+  // 스냅 대상 변: 다른 모듈 4변 + **그린 벽(비모듈)** — 벽/공간 그리기로 만든 벽에도
+  // 모듈이 착 붙는다 (공유벽 병합은 모듈끼리만 — 그린 벽과는 정렬 스냅으로 결합감 제공).
+  const targetEdges: Edge[] = [];
   for (const o of others) {
     if (o.id === moving.id) continue;
-    for (const oe of Object.values(moduleEdges(o))) {
+    for (const e of Object.values(moduleEdges(o))) targetEdges.push(e);
+  }
+  for (const w of useLayoutStore.getState().walls) {
+    if (isModuleWall(w) || !w.startNode || !w.endNode) continue;
+    targetEdges.push({
+      ax: w.startNode.position.x, az: w.startNode.position.z,
+      bx: w.endNode.position.x, bz: w.endNode.position.z,
+    });
+  }
+
+  {
+    for (const oe of targetEdges) {
       for (const me of myEdges) {
         // 대각 변(자유각 회전)은 스냅 제외 — 축 정렬 변끼리만
         const axisAligned = (e: Edge) => Math.abs(e.az - e.bz) < 1e-4 || Math.abs(e.ax - e.bx) < 1e-4;
