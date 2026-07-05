@@ -7,7 +7,8 @@ import { Brush, Evaluator, SUBTRACTION, ADDITION } from 'three-bvh-csg';
 import { Wall } from '@/domain/structures/Wall';
 import { polyGeometryExtruded } from '@/engine/mesh/MeshGenerator';
 import { useViewStore } from '@/engine/stores/viewStore';
-import { isModuleWall } from '@/features/spaceModules/syncModuleWalls';
+import { isModuleWall, wallSourceModules, setModuleDragging } from '@/features/spaceModules/syncModuleWalls';
+import { findModuleSideForWall, resizeModuleEdge } from '@/features/spaceModules/moduleResize';
 import { useWallDrawingStore } from '@/features/drawing/wallDrawingStore';
 import { useSelectionStore } from '@/features/selection/selectionStore';
 import { useEditStore } from '@/features/editing/editStore';
@@ -181,12 +182,35 @@ export function WallView({ wall, color = '#cccccc' }: { wall: Wall; color?: stri
       selectMesh(myMeshKey, e.shiftKey);
       return;
     }
-    // 모듈발 벽은 노드 직접 이동 금지 — 모듈이 원본이라 다음 sync 에서 원복된다.
-    // 크기 조절은 선택 모듈의 변 핸들(ModulePlacement)로 수행. 여기선 선택만.
+    // 모듈발 벽: 노드 직접 이동은 sync 가 원복시키므로, 드래그를 **모듈 변 크기조절**로 변환.
+    // (변 핸들과 동일 로직 — 반대 변 고정, 놓으면 벽 sync 1회)
     if (isModuleWall(wall)) {
-      const cur = useSelectionStore.getState().selectedWall;
-      useSelectionStore.getState().selectWall(cur === wall ? null : wall);
+      useSelectionStore.getState().selectWall(wall);
       selectMesh(myMeshKey, e.shiftKey);
+      const mid = wall.startNode.position.clone().add(wall.endNode.position).multiplyScalar(0.5);
+      const hit = findModuleSideForWall(wallSourceModules(wall) ?? [], mid.x, mid.z);
+      if (!hit) return; // 매칭 실패 시 선택만
+      setModuleDragging(true); // 드래그 동안 벽 sync 동결 (이 Wall 인스턴스 유지)
+      const el = gl.domElement;
+      const toGround = (cx: number, cy: number): [number, number] | null => {
+        const r = el.getBoundingClientRect();
+        const nd = new Vector2(((cx - r.left) / r.width) * 2 - 1, -(((cy - r.top) / r.height) * 2 - 1));
+        const rc = new Raycaster();
+        rc.setFromCamera(nd, camera);
+        const pt = new Vector3();
+        return rc.ray.intersectPlane(new Plane(new Vector3(0, 1, 0), 0), pt) ? [pt.x, pt.z] : null;
+      };
+      const onMove = (ev: PointerEvent) => {
+        const gp = toGround(ev.clientX, ev.clientY);
+        if (gp) resizeModuleEdge(hit.moduleId, hit.side, gp[0], gp[1]);
+      };
+      const onUp = () => {
+        window.removeEventListener('pointermove', onMove);
+        window.removeEventListener('pointerup', onUp);
+        setModuleDragging(false); // 미룬 sync 실행 → 벽 재생성
+      };
+      window.addEventListener('pointermove', onMove);
+      window.addEventListener('pointerup', onUp);
       return;
     }
     const downX = e.clientX;

@@ -9,6 +9,7 @@ import { isGizmoBusy } from '@/features/models/gizmoGuard';
 import { useViewStore } from '@/engine/stores/viewStore';
 import { moduleEdges } from './compileModules';
 import { setModuleDragging } from './syncModuleWalls';
+import { resizeModuleEdge } from './moduleResize';
 import { computeModuleSnap } from './moduleSnap';
 import { OpeningMarkers } from './OpeningMarkers';
 
@@ -439,36 +440,6 @@ export function ModulePlacement() {
   );
 }
 
-
-/**
- * 변 핸들 드래그 → 모듈 크기 조절. 드래그한 변만 포인터를 따라가고 **반대 변은 고정**
- * (치수 w/d 변경 + 중심을 절반만큼 이동). 회전(ry 자유각) 상태에서도 로컬 좌표로 환산해 동작.
- */
-function resizeModuleEdge(id: string, side: 'N'|'E'|'S'|'W', px: number, pz: number): void {
-  const st = useSpaceModuleStore.getState();
-  const m = st.modules.find((x) => x.id === id);
-  if (!m) return;
-  const MIN = 0.6; // 최소 변 길이(m)
-  const phi = (m.ry * Math.PI) / 180;
-  const cos = Math.cos(-phi), sin = Math.sin(-phi);
-  // 포인터를 모듈 로컬로 (월드 회전 역변환)
-  const rx = px - m.x, rz = pz - m.z;
-  const lx = rx * cos - rz * sin;
-  const lz = rx * sin + rz * cos;
-  let w = m.w, d = m.d, cxL = 0, czL = 0; // 중심 이동(로컬)
-  if (side === 'E') { const newW = Math.max(MIN, lx + m.w / 2); cxL = (newW - m.w) / 2; w = newW; }
-  else if (side === 'W') { const newW = Math.max(MIN, m.w / 2 - lx); cxL = -(newW - m.w) / 2; w = newW; }
-  else if (side === 'S') { const newD = Math.max(MIN, lz + m.d / 2); czL = (newD - m.d) / 2; d = newD; }
-  else { const newD = Math.max(MIN, m.d / 2 - lz); czL = -(newD - m.d) / 2; d = newD; }
-  // 중심 이동을 월드로 (정방향 회전)
-  const c2 = Math.cos(phi), s2 = Math.sin(phi);
-  st.update(id, {
-    w: Math.round(w * 100) / 100,
-    d: Math.round(d * 100) / 100,
-    x: m.x + cxL * c2 - czL * s2,
-    z: m.z + cxL * s2 + czL * c2,
-  });
-}
 
 /** 회전 각 스냅 — 45°/90° 배수 ±4° 는 강스냅, 그 외 5° 단위. [0,360). */
 export function snapAngle(deg: number): number {
