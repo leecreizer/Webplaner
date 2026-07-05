@@ -10,6 +10,7 @@ import { polyGeometryExtruded } from '@/engine/mesh/MeshGenerator';
 import { useViewStore } from '@/engine/stores/viewStore';
 import { isModuleWall, wallSourceModules, setModuleDragging } from '@/features/spaceModules/syncModuleWalls';
 import { findModuleSideForWall, resizeModuleEdge } from '@/features/spaceModules/moduleResize';
+import { clearOtherSelections } from '@/features/selection/clearSelections';
 import { useWallDrawingStore } from '@/features/drawing/wallDrawingStore';
 import { useSelectionStore } from '@/features/selection/selectionStore';
 import { useEditStore } from '@/features/editing/editStore';
@@ -179,6 +180,7 @@ export function WallView({ wall, color = '#cccccc' }: { wall: Wall; color?: stri
         const cur = useSelectionStore.getState().selectedWall;
         const next = cur === wall ? null : wall;
         useSelectionStore.getState().selectWall(next);
+        if (next) clearOtherSelections('wall'); // 벽 선택 시 모델/상품/모듈 해제
       }
       selectMesh(myMeshKey, e.shiftKey);
       return;
@@ -187,6 +189,7 @@ export function WallView({ wall, color = '#cccccc' }: { wall: Wall; color?: stri
     // (변 핸들과 동일 로직 — 반대 변 고정, 놓으면 벽 sync 1회)
     if (isModuleWall(wall)) {
       useSelectionStore.getState().selectWall(wall);
+      clearOtherSelections('wall');
       selectMesh(myMeshKey, e.shiftKey);
       const mid = wall.startNode.position.clone().add(wall.endNode.position).multiplyScalar(0.5);
       const hit = findModuleSideForWall(wallSourceModules(wall) ?? [], mid.x, mid.z);

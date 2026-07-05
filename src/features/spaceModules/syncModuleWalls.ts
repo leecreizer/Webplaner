@@ -1,11 +1,71 @@
 import { BoxGeometry, Vector3 } from 'three';
 import { useEditStore } from '@/features/editing/editStore';
+import { useVisibilityStore } from '@/features/scene/visibilityStore';
 import { Node } from '@/domain/structures/Node';
 import { Wall } from '@/domain/structures/Wall';
 import { useLayoutStore, layoutRegistry } from '@/domain/state/layoutStore';
 import { buildSpaces } from '@/domain/layout/SpaceBuilder';
 import { useSpaceModuleStore } from './spaceModuleStore';
 import { compileModules, type CompiledWall, type OpeningConflict } from './compileModules';
+
+/**
+ * 숨김/삭제 상태 마이그레이션 — visibilityStore 는 `wall-{index}`/`floor-{index}` 키를 쓰는데
+ * sync/buildSpaces 가 벽·공간을 재생성하면 인덱스가 바뀌어 숨김이 풀려 보인다(원복 체감).
+ * 재빌드 전 위치 시그니처로 상태를 기억했다가 새 인덱스 키로 옮겨 붙인다.
+ */
+function wallSig(w: Wall): string | null {
+  if (!w.startNode || !w.endNode) return null;
+  const a = w.startNode.position, b = w.endNode.position;
+  const r = (v: number) => Math.round(v * 20) / 20; // 5cm 격자
+  // 방향 무관 정렬
+  const p1 = `${r(a.x)},${r(a.z)}`, p2 = `${r(b.x)},${r(b.z)}`;
+  return p1 < p2 ? `w:${p1}|${p2}` : `w:${p2}|${p1}`;
+}
+
+function snapshotVisibilityBySig(): Map<string, { hidden?: true; removed?: true }> {
+  const vis = useVisibilityStore.getState();
+  const map = new Map<string, { hidden?: true; removed?: true }>();
+  const mark = (sig: string | null, k: 'hidden'|'removed') => {
+    if (!sig) return;
+    const cur = map.get(sig) ?? {};
+    cur[k] = true;
+    map.set(sig, cur);
+  };
+  for (const w of useLayoutStore.getState().walls) {
+    const key = `wall-${w.wallIndex}`;
+    if (vis.hidden[key]) mark(wallSig(w), 'hidden');
+    if (vis.removed[key]) mark(wallSig(w), 'removed');
+  }
+  for (const sp of useLayoutStore.getState().spaces) {
+    const r = (v: number) => Math.round(v * 10) / 10;
+    const sig = `s:${r(sp.center.x)},${r(sp.center.z)}`;
+    for (const kind of ['floor', 'ceiling'] as const) {
+      const key = `${kind}-${sp.spaceIndex}`;
+      if (vis.hidden[key]) mark(`${sig}:${kind}`, 'hidden');
+      if (vis.removed[key]) mark(`${sig}:${kind}`, 'removed');
+    }
+  }
+  return map;
+}
+
+function restoreVisibilityBySig(snap: Map<string, { hidden?: true; removed?: true }>): void {
+  if (snap.size === 0) return;
+  const vis = useVisibilityStore.getState();
+  const apply = (sig: string | null, key: string) => {
+    if (!sig) return;
+    const st = snap.get(sig);
+    if (!st) return;
+    if (st.hidden && !vis.hidden[key]) vis.setVisible(key, false);
+    if (st.removed && !vis.removed[key]) vis.remove(key);
+  };
+  for (const w of useLayoutStore.getState().walls) apply(wallSig(w), `wall-${w.wallIndex}`);
+  for (const sp of useLayoutStore.getState().spaces) {
+    const r = (v: number) => Math.round(v * 10) / 10;
+    const sig = `s:${r(sp.center.x)},${r(sp.center.z)}`;
+    apply(`${sig}:floor`, `floor-${sp.spaceIndex}`);
+    apply(`${sig}:ceiling`, `ceiling-${sp.spaceIndex}`);
+  }
+}
 
 /** 모듈발 벽 태그 — 도메인 클래스 무수정 확장 (스펙 '기존 구조 무변경' 원칙). */
 const MODULE_TAG: unique symbol = Symbol('spaceModuleWall');
@@ -55,6 +115,8 @@ export function syncModuleWalls(): void {
   // 분리된 모듈의 낡은 suppressedBy 를 먼저 해제 — 새 컴파일에 반영되도록.
   useSpaceModuleStore.getState().releaseStaleSuppressions();
 
+  // 재빌드로 인덱스가 바뀌어도 숨김/삭제가 유지되도록 시그니처 스냅샷
+  const visSnap = snapshotVisibilityBySig();
   const modules = useSpaceModuleStore.getState().modules;
   const { walls: compiled, conflicts } = compileModules(modules);
   lastConflicts.current = conflicts;
@@ -103,6 +165,7 @@ export function syncModuleWalls(): void {
   }
   // 3) 공간 재유도 — 그린 벽 + 모듈 벽 합산은 layoutStore 가 이미 하나의 목록
   buildSpaces(useLayoutStore.getState().walls, layoutRegistry);
+  restoreVisibilityBySig(visSnap); // 새 인덱스 키로 숨김/삭제 이관
 }
 
 /** 모듈 store 변경 구독 + 50ms debounce. 해제 함수 반환. */

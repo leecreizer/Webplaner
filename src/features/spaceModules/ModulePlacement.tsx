@@ -6,6 +6,7 @@ import { Edges, Html } from '@react-three/drei';
 import { useSpaceModuleStore, MODULE_PRESETS, OPENING_DEFAULTS } from './spaceModuleStore';
 import { useImportedModelStore, type PrimitiveKind } from '@/features/models/importedModelStore';
 import { isGizmoBusy } from '@/features/models/gizmoGuard';
+import { clearOtherSelections } from '@/features/selection/clearSelections';
 import { useViewStore } from '@/engine/stores/viewStore';
 import { moduleEdges } from './compileModules';
 import { setModuleDragging } from './syncModuleWalls';
@@ -291,6 +292,7 @@ export function ModulePlacement() {
                 { const st = useSpaceModuleStore.getState(); if (st.pendingKind || st.pendingOpeningType || st.movingOpening) return; }
                 e.stopPropagation();
                 useSpaceModuleStore.getState().select(m.id);
+                clearOtherSelections('module'); // 모듈 선택 시 벽/모델/상품 해제
                 // 모듈 이동은 **2D(탑뷰) 전용** — 3D 에서는 선택만 (공간 배치 변경 방지)
                 if (useViewStore.getState().viewMode !== '2D') return;
                 // 드래그 시작 — 바닥 교점 기준 오프셋 저장 + 포인터 캡처 + 벽 sync 동결

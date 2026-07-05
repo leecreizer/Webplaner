@@ -4,6 +4,7 @@ import { standardToPhysical } from '@/domain/materials/standardToPhysical';
 import { useFrame, useThree } from '@react-three/fiber';
 import { requestShadowUpdate } from '@/engine/lighting/ShadowDemand';
 import { registerGizmo, isGizmoBusy } from '@/features/models/gizmoGuard';
+import { clearOtherSelections } from '@/features/selection/clearSelections';
 import { Edges, TransformControls, useGLTF } from '@react-three/drei';
 import { HelperScaler, isHelperRegionName, replaceableSizeOf, pickReplaceableSize } from '@/domain/products/HelperScaler';
 import { readDpTypes, readDoorSlots } from '@/domain/products/ModelMarkers';
@@ -583,6 +584,7 @@ export function ProductPlacement() {
   const onBoxDown = useCallback((id: string, code: string | undefined, name: string, shift: boolean) => {
     if (isGizmoBusy()) return; // 기즈모 핸들 조작 중 — 뒤 상품 오선택 방지
     select(id, shift);
+    clearOtherSelections('product'); // 상품 선택 시 벽/모델/모듈 해제
     const ids = usePlacedProductStore.getState().selectedIds;
     if (ids.length <= 1) window.parent?.postMessage({ type: 'hp3:selected', code, name }, '*');
     else window.parent?.postMessage({ type: 'hp3:selected', code, name, count: ids.length }, '*');

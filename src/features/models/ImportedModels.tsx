@@ -25,6 +25,7 @@ import {
 import { TeapotGeometry } from 'three/examples/jsm/geometries/TeapotGeometry.js';
 import { useGLTF, TransformControls } from '@react-three/drei';
 import { registerGizmo, isGizmoBusy } from './gizmoGuard';
+import { clearOtherSelections } from '@/features/selection/clearSelections';
 import { clone as cloneSkeleton } from 'three/examples/jsm/utils/SkeletonUtils.js';
 import { standardToPhysical } from '@/domain/materials/standardToPhysical';
 import {
@@ -264,6 +265,7 @@ function ModelBody({ model, obj: rawObj }: { model: ImportedModel; obj: Object3D
           }
           e.stopPropagation();
           select(model.id);
+          clearOtherSelections('model'); // 모델 선택 시 벽/상품/모듈 선택 해제
         }}
       >
         <primitive object={obj} />
