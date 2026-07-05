@@ -16,9 +16,25 @@ interface GizmoLike {
 
 const active = new Set<GizmoLike>();
 
+/**
+ * 기즈모 색 튜닝 — 기본(비호버) 축은 차분한 색, 핸들 호버/드래그(active) 시 밝은 색.
+ * three 0.185 TransformControls.setColors(x, y, z, active) 공식 API 사용.
+ * (기존 기본값은 원색 축 + 노랑 active 인데, 톤매핑 환경에서 active 가 오히려
+ *  흐려 보인다는 피드백 → 축을 어둡게 낮추고 active 를 고휘도로.)
+ */
+function tuneGizmoAppearance(g: GizmoLike): void {
+  const tc = g as unknown as {
+    setColors?: (x: number, y: number, z: number, active: number) => void;
+  };
+  try {
+    tc.setColors?.(0x8f3a3a, 0x3a8f3a, 0x3a4a8f, 0xffff55);
+  } catch { /* 구버전 등 미지원 시 기본 색 유지 */ }
+}
+
 /** TransformControls mount 시 등록 — 반환된 함수로 unmount 시 해제. */
 export function registerGizmo(g: GizmoLike): () => void {
   active.add(g);
+  tuneGizmoAppearance(g);
   return () => active.delete(g);
 }
 
