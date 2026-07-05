@@ -19,6 +19,22 @@ export function wallSourceModules(w: Wall): string[] | undefined {
 }
 
 /** 마지막 컴파일의 개구부 충돌 — UI(충돌 다이얼로그)가 구독. */
+/**
+ * 모듈 드래그 중 벽 sync 동결 플래그.
+ * 드래그 중 debounce 가 발동하면 벽 전체 재생성+CSG 재평가로 메인 스레드가 수백 ms 멈춰
+ * 마우스 추종이 끊긴다 → 드래그 동안 sync 를 미루고, 드래그 종료 시 1회 실행.
+ */
+let _dragging = false;
+let _pendingWhileDrag = false;
+
+export function setModuleDragging(dragging: boolean): void {
+  _dragging = dragging;
+  if (!dragging && _pendingWhileDrag) {
+    _pendingWhileDrag = false;
+    syncModuleWalls();
+  }
+}
+
 /** 이번 sync 가 등록한 개구부 CSG 컷 op id — 다음 sync 에서 제거 후 재등록. */
 let _openingOpIds: number[] = [];
 
@@ -94,7 +110,10 @@ export function startModuleWallSync(): () => void {
   let timer: ReturnType<typeof setTimeout> | null = null;
   const unsub = useSpaceModuleStore.subscribe(() => {
     if (timer) clearTimeout(timer);
-    timer = setTimeout(syncModuleWalls, 50);
+    timer = setTimeout(() => {
+      if (_dragging) { _pendingWhileDrag = true; return; } // 드래그 종료 시 실행
+      syncModuleWalls();
+    }, 50);
   });
   return () => { if (timer) clearTimeout(timer); unsub(); };
 }

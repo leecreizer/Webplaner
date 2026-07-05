@@ -8,6 +8,7 @@ import { useImportedModelStore, type PrimitiveKind } from '@/features/models/imp
 import { isGizmoBusy } from '@/features/models/gizmoGuard';
 import { useViewStore } from '@/engine/stores/viewStore';
 import { moduleEdges } from './compileModules';
+import { setModuleDragging } from './syncModuleWalls';
 import { computeModuleSnap } from './moduleSnap';
 import { OpeningMarkers } from './OpeningMarkers';
 
@@ -46,6 +47,8 @@ export function ModulePlacement() {
   } | null>(null);
   // 부착 모드에서 마우스를 따라다니는 커서 위치(바닥 교점) — 벽 스냅 전에도 고스트 표시
   const [attachCursor, setAttachCursor] = useState<[number, number] | null>(null);
+  // 변 핸들 크기조절 드래그 상태 (2D 전용) — side 는 모듈 로컬 변
+  const edgeDragRef = useRef<{ id: string; side: 'N'|'E'|'S'|'W' } | null>(null);
   // 드래그 중인 모듈의 "잡은 지점 - 모듈 중심" 오프셋. null이면 드래그 아님.
   const dragRef = useRef<{ id: string; offX: number; offZ: number } | null>(null);
 
@@ -78,6 +81,29 @@ export function ModulePlacement() {
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
   }, []);
+
+  // 포인터 → 바닥(y=0) 월드 교점. 드래그가 슬래브 메시 교점(e.point)에 의존하면
+  // 렌더 랙/슬래브 이탈 시 이전 좌표가 들어와 "되돌아가는" 현상이 생긴다 — 카메라 레이 기준으로 계산.
+  const pointerToGround = (clientX: number, clientY: number): [number, number] | null => {
+    const r = gl.domElement.getBoundingClientRect();
+    const nd = new Vector2(((clientX - r.left) / r.width) * 2 - 1, -(((clientY - r.top) / r.height) * 2 - 1));
+    const rc = new Raycaster();
+    rc.setFromCamera(nd, camera);
+    const pt = new Vector3();
+    return rc.ray.intersectPlane(new Plane(new Vector3(0, 1, 0), 0), pt) ? [pt.x, pt.z] : null;
+  };
+
+  // 배치 고스트에도 벽 스냅 적용 — 프리셋 치수의 가상 모듈로 스냅 보정량 계산
+  const snapGhost = (x: number, z: number): [number, number] => {
+    if (!pendingKind) return [x, z];
+    const preset = MODULE_PRESETS[pendingKind];
+    const virt = {
+      id: '__ghost', kind: pendingKind, name: '', x, z, ry: 0 as number,
+      w: preset.w, d: preset.d, wallH: 2.4, openings: [],
+    };
+    const sn = computeModuleSnap(virt, x, z, useSpaceModuleStore.getState().modules);
+    return [x + sn.dx, z + sn.dz];
+  };
 
   // 고스트 박스 지오메트리 — 종류별 1회 생성 (렌더마다 재생성 시 GPU 누수)
   const ghostGeo = useMemo(() => {
@@ -227,12 +253,13 @@ export function ModulePlacement() {
         <mesh
           rotation={[-Math.PI / 2, 0, 0]}
           position={[0, 0.001, 0]}
-          onPointerMove={(e) => { e.stopPropagation(); setGhost([e.point.x, e.point.z]); }}
+          onPointerMove={(e) => { e.stopPropagation(); setGhost(snapGhost(e.point.x, e.point.z)); }}
           onPointerDown={(e) => {
             if (e.button !== 0) return;
             e.stopPropagation();
             const s = useSpaceModuleStore.getState();
-            s.add(pendingKind, e.point.x, e.point.z);
+            const [sx, sz] = snapGhost(e.point.x, e.point.z);
+            s.add(pendingKind, sx, sz);
             s.setPendingKind(null);
             setGhost(null);
           }}
@@ -265,8 +292,11 @@ export function ModulePlacement() {
                 useSpaceModuleStore.getState().select(m.id);
                 // 모듈 이동은 **2D(탑뷰) 전용** — 3D 에서는 선택만 (공간 배치 변경 방지)
                 if (useViewStore.getState().viewMode !== '2D') return;
-                // 드래그 시작 — 잡은 지점과 모듈 중심의 오프셋을 저장하고 포인터 캡처.
-                dragRef.current = { id: m.id, offX: e.point.x - m.x, offZ: e.point.z - m.z };
+                // 드래그 시작 — 바닥 교점 기준 오프셋 저장 + 포인터 캡처 + 벽 sync 동결
+                const g0 = pointerToGround(e.nativeEvent.clientX, e.nativeEvent.clientY);
+                if (!g0) return;
+                dragRef.current = { id: m.id, offX: g0[0] - m.x, offZ: g0[1] - m.z };
+                setModuleDragging(true);
                 (e.target as Element).setPointerCapture(e.pointerId);
               }}
               onPointerMove={(e: ThreeEvent<PointerEvent>) => {
@@ -274,18 +304,21 @@ export function ModulePlacement() {
                 { const st = useSpaceModuleStore.getState(); if (st.pendingKind || st.pendingOpeningType || st.movingOpening) return; }
                 const d = dragRef.current;
                 if (!d || d.id !== m.id) return;
+                const gp = pointerToGround(e.nativeEvent.clientX, e.nativeEvent.clientY);
+                if (!gp) return;
                 e.stopPropagation();
                 const s = useSpaceModuleStore.getState();
                 const cur = s.modules.find((mm) => mm.id === d.id);
                 if (!cur) return;
-                const x = e.point.x - d.offX;
-                const z = e.point.z - d.offZ;
+                const x = gp[0] - d.offX;
+                const z = gp[1] - d.offZ;
                 const snap = computeModuleSnap(cur, x, z, s.modules);
                 s.transformModule(d.id, { x: x + snap.dx, z: z + snap.dz }); // 상품 동반 이동
               }}
               onPointerUp={(e: ThreeEvent<PointerEvent>) => {
                 if (dragRef.current?.id !== m.id) return;
                 dragRef.current = null;
+                setModuleDragging(false); // 동결 해제 — 미룬 벽 sync 1회 실행
                 (e.target as Element).releasePointerCapture(e.pointerId);
               }}
             >
@@ -299,6 +332,46 @@ export function ModulePlacement() {
             <Html center position={[0, 0.05, 0]} style={{ pointerEvents: 'none', fontSize: 11, color: '#334155', fontWeight: 600, textShadow: '0 0 3px #fff' }}>
               {m.name}
             </Html>
+            {/* 변 크기조절 핸들 — 2D 전용. 잡고 끌면 해당 변만 늘어나고 반대 변은 고정.
+                (모듈발 벽을 직접 드래그하면 sync 가 원복시키므로, 크기 조절은 이 핸들이 정식 경로) */}
+            {sel && viewMode2D && (['N', 'E', 'S', 'W'] as const).map((side) => {
+              // 로컬 변 중점 (ry=0 기준) — 부모 group 이 회전을 적용하므로 로컬 좌표로 배치
+              const lp: Record<string, [number, number]> = {
+                N: [0, -m.d / 2], S: [0, m.d / 2], E: [m.w / 2, 0], W: [-m.w / 2, 0],
+              };
+              const [hx, hz] = lp[side];
+              return (
+                <mesh
+                  key={`h-${side}`}
+                  position={[hx, 0.03, hz]}
+                  rotation={[-Math.PI / 2, 0, 0]}
+                  onPointerDown={(e) => {
+                    if (e.button !== 0) return;
+                    e.stopPropagation();
+                    edgeDragRef.current = { id: m.id, side };
+                    setModuleDragging(true); // 크기조절 중에도 벽 sync 동결
+                    (e.target as Element).setPointerCapture(e.pointerId);
+                  }}
+                  onPointerMove={(e) => {
+                    const d = edgeDragRef.current;
+                    if (!d || d.id !== m.id) return;
+                    e.stopPropagation();
+                    const gp = pointerToGround(e.nativeEvent.clientX, e.nativeEvent.clientY);
+                    if (!gp) return;
+                    resizeModuleEdge(m.id, d.side, gp[0], gp[1]);
+                  }}
+                  onPointerUp={(e) => {
+                    if (edgeDragRef.current?.id !== m.id) return;
+                    edgeDragRef.current = null;
+                    setModuleDragging(false);
+                    (e.target as Element).releasePointerCapture(e.pointerId);
+                  }}
+                >
+                  <planeGeometry args={[0.28, 0.28]} />
+                  <meshBasicMaterial color="#7c3aed" transparent opacity={0.9} depthWrite={false} />
+                </mesh>
+              );
+            })}
             {/* 선택 시 회전 버튼 — 2D(탑뷰) 전용 (이동과 동일 정책). 클릭 +90°/드래그 자유회전 */}
             {sel && viewMode2D && (
               <Html center position={[m.w / 2, 0.05, -m.d / 2]} zIndexRange={[90, 0]}>
@@ -366,6 +439,36 @@ export function ModulePlacement() {
   );
 }
 
+
+/**
+ * 변 핸들 드래그 → 모듈 크기 조절. 드래그한 변만 포인터를 따라가고 **반대 변은 고정**
+ * (치수 w/d 변경 + 중심을 절반만큼 이동). 회전(ry 자유각) 상태에서도 로컬 좌표로 환산해 동작.
+ */
+function resizeModuleEdge(id: string, side: 'N'|'E'|'S'|'W', px: number, pz: number): void {
+  const st = useSpaceModuleStore.getState();
+  const m = st.modules.find((x) => x.id === id);
+  if (!m) return;
+  const MIN = 0.6; // 최소 변 길이(m)
+  const phi = (m.ry * Math.PI) / 180;
+  const cos = Math.cos(-phi), sin = Math.sin(-phi);
+  // 포인터를 모듈 로컬로 (월드 회전 역변환)
+  const rx = px - m.x, rz = pz - m.z;
+  const lx = rx * cos - rz * sin;
+  const lz = rx * sin + rz * cos;
+  let w = m.w, d = m.d, cxL = 0, czL = 0; // 중심 이동(로컬)
+  if (side === 'E') { const newW = Math.max(MIN, lx + m.w / 2); cxL = (newW - m.w) / 2; w = newW; }
+  else if (side === 'W') { const newW = Math.max(MIN, m.w / 2 - lx); cxL = -(newW - m.w) / 2; w = newW; }
+  else if (side === 'S') { const newD = Math.max(MIN, lz + m.d / 2); czL = (newD - m.d) / 2; d = newD; }
+  else { const newD = Math.max(MIN, m.d / 2 - lz); czL = -(newD - m.d) / 2; d = newD; }
+  // 중심 이동을 월드로 (정방향 회전)
+  const c2 = Math.cos(phi), s2 = Math.sin(phi);
+  st.update(id, {
+    w: Math.round(w * 100) / 100,
+    d: Math.round(d * 100) / 100,
+    x: m.x + cxL * c2 - czL * s2,
+    z: m.z + cxL * s2 + czL * c2,
+  });
+}
 
 /** 회전 각 스냅 — 45°/90° 배수 ±4° 는 강스냅, 그 외 5° 단위. [0,360). */
 export function snapAngle(deg: number): number {
