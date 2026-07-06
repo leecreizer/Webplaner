@@ -578,7 +578,7 @@ export function ProductPlacement() {
     if (!tc) return;
     return registerGizmo(tc as { axis: string | null; dragging: boolean });
   });
-  const lastPivot = useRef<{ x: number; z: number; ry: number }>({ x: 0, z: 0, ry: 0 });
+  const lastPivot = useRef<{ x: number; z: number; ry: number; y?: number }>({ x: 0, z: 0, ry: 0, y: 0 });
   const selectedSet = new Set(selectedIds);
   // 도어별 최대 열림 각(충돌 시 교차 직전까지). 배치/각도 변경 시 재계산.
   const doorClamp = useMemo(() => computeDoorClamp(placed, doorOpenDeg), [placed, doorOpenDeg]);
@@ -594,7 +594,7 @@ export function ProductPlacement() {
     const cz = boxes.reduce((s, b) => s + b.z, 0) / boxes.length;
     pivotObj.position.set(cx, 0, cz);
     pivotObj.rotation.set(0, 0, 0);
-    lastPivot.current = { x: cx, z: cz, ry: 0 };
+    lastPivot.current = { x: cx, z: cz, ry: 0, y: 0 };
   }, [pivotObj, selectedIds]);
 
   // 박스 클릭 선택 (Shift = 다중 토글), 호스트에 선택 정보 전송.
@@ -612,8 +612,10 @@ export function ProductPlacement() {
   const onPivotChange = () => {
     if (!pivotObj) return;
     const px = pivotObj.position.x, pz = pivotObj.position.z, pry = pivotObj.rotation.y;
+    const py = pivotObj.position.y;
     const last = lastPivot.current;
     const dx = px - last.x, dz = pz - last.z, dRy = pry - last.ry;
+    const dy = py - (last.y ?? 0);
     const st = usePlacedProductStore.getState();
     if (gizmoMode === 'translate' && (dx || dz)) {
       // 1) 델타 적용한 임시 위치로 선택 상품 합집합 AABB 계산
@@ -627,7 +629,11 @@ export function ProductPlacement() {
       }
       // 2) 충돌·근접 시 모서리 스냅 보정
       const snap = others.length && isFinite(union.minx) ? computeSnap(union, others) : { dx: 0, dz: 0 };
-      for (const b of sel) update(b.id, { x: b.x + dx + snap.dx, z: b.z + dz + snap.dz });
+      const dLift = Math.round(dy * 1000); // m → mm
+      for (const b of sel) update(b.id, {
+        x: b.x + dx + snap.dx, z: b.z + dz + snap.dz,
+        ...(dLift !== 0 ? { lift: Math.max(0, (b.lift ?? 0) + dLift) } : {}),
+      });
     } else if (gizmoMode === 'rotate' && dRy) {
       const cx = last.x, cz = last.z, cos = Math.cos(dRy), sin = Math.sin(dRy);
       for (const b of st.placed) if (selectedSet.has(b.id)) {
@@ -635,7 +641,7 @@ export function ProductPlacement() {
         update(b.id, { x: cx + rx * cos - rz * sin, z: cz + rx * sin + rz * cos, ry: b.ry + (dRy * 180) / Math.PI });
       }
     }
-    lastPivot.current = { x: px, z: pz, ry: pry };
+    lastPivot.current = { x: px, z: pz, ry: pry, y: py };
   };
 
   // 배치 목록이 바뀌면 호스트(어드민)로 전송 → 견적보기 등에서 사용.
@@ -779,9 +785,10 @@ export function ProductPlacement() {
                 object={singleGroup}
                 mode={gizmoMode}
                 space="local"
-                showX={gizmoMode === 'translate'}
-                showZ={gizmoMode === 'translate'}
-                showY={gizmoMode === 'rotate'}
+                // 3축 모두 활성 — Y(상하) 이동은 배치높이(lift)로 커밋
+                showX
+                showY
+                showZ
                 onMouseDown={() => setGizmoDragging(true)}
                 onObjectChange={() => {
                   if (gizmoMode !== 'translate') return;
@@ -827,9 +834,9 @@ export function ProductPlacement() {
               object={pivotObj}
               mode={gizmoMode}
               space="local"
-              showX={gizmoMode === 'translate'}
-              showZ={gizmoMode === 'translate'}
-              showY={gizmoMode === 'rotate'}
+              showX
+              showY
+              showZ
               onObjectChange={onPivotChange}
             />
           );
