@@ -551,6 +551,16 @@ export function ProductPlacement() {
   const toggleDoors = usePlacedProductStore((s) => s.toggleDoors);
   const doorOpenDeg = usePlacedProductStore((s) => s.doorOpenDeg);
   const [ghost, setGhost] = useState<[number, number] | null>(null);
+  /** 배치 대기(pending) 상품의 스냅 보정 좌표 — 고스트 미리보기·확정 배치 공용. */
+  const snapPendingPoint = (x: number, z: number): [number, number] => {
+    const st = usePlacedProductStore.getState();
+    if (!pending || st.placed.length === 0) return [x, z];
+    const ghostP = { ...pending, id: 'ghost', x, z, ry: 0 } as PlacedProduct;
+    const f = footprintXZ(ghostP);
+    const others = st.placed.filter((b) => !b.parentId);
+    const snap = computeSnap(f, others);
+    return [x + snap.dx, z + snap.dz];
+  };
   const [gizmoMode, setGizmoMode] = useState<'translate' | 'rotate'>('translate');
   /** 선택 박스들의 중심 피벗(보이지 않음) — 기즈모를 여기 붙여 다중 이동/회전 */
   const [pivotObj, setPivotObj] = useState<Object3D | null>(null);
@@ -769,21 +779,17 @@ export function ProductPlacement() {
             // 선택 핸들러가 pointerdown을 가로채지 못하게 함 (배치 우선)
             position={[0, 0.05, 0]}
             renderOrder={999}
-            onPointerMove={(e) => { e.stopPropagation(); setGhost([e.point.x, e.point.z]); }}
+            onPointerMove={(e) => {
+              e.stopPropagation();
+              // 고스트 미리보기에도 상품 간 스냅 적용 — 배치 전부터 붙을 위치가 보이게
+              setGhost(snapPendingPoint(e.point.x, e.point.z));
+            }}
             onPointerDown={(e) => {
               if (e.button === 2) { cancel(); setGhost(null); return; } // 우클릭 취소
               if (e.button !== 0) return;
               e.stopPropagation();
-              // 배치 시에도 인접 상품과 충돌 체크 → 모서리 스냅.
-              let px = e.point.x, pz = e.point.z;
-              const st = usePlacedProductStore.getState();
-              if (pending && st.placed.length) {
-                const ghostP = { ...pending, id: 'ghost', x: px, z: pz, ry: 0 } as PlacedProduct;
-                const f = footprintXZ(ghostP);
-                const others = st.placed.filter((b) => !b.parentId);
-                const snap = computeSnap(f, others);
-                px += snap.dx; pz += snap.dz;
-              }
+              // 배치 확정도 동일 스냅 (미리보기와 일치)
+              const [px, pz] = snapPendingPoint(e.point.x, e.point.z);
               place(px, pz);
               setGhost(null);
             }}
