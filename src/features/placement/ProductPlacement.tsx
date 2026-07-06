@@ -568,6 +568,8 @@ export function ProductPlacement() {
   const [gizmoMode, setGizmoMode] = useState<'translate' | 'rotate'>('translate');
   /** 선택 박스들의 중심 피벗(보이지 않음) — 기즈모를 여기 붙여 다중 이동/회전 */
   const [pivotObj, setPivotObj] = useState<Object3D | null>(null);
+  // 기즈모 드래그 중 여부 — 이동 중에는 리사이즈 핸들 숨김, 멈추면 다시 표시
+  const [gizmoDragging, setGizmoDragging] = useState(false);
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const tcRef = useRef<any>(null); // TransformControls 인스턴스 — 핸들 위면 .axis 설정됨
   // 기즈모 가드 등록 — 핸들 호버/드래그 중 씬 선택 차단
@@ -780,25 +782,39 @@ export function ProductPlacement() {
                 showX={gizmoMode === 'translate'}
                 showZ={gizmoMode === 'translate'}
                 showY={gizmoMode === 'rotate'}
+                onMouseDown={() => setGizmoDragging(true)}
                 onObjectChange={() => {
-                  // 이동 중 인접 상품 모서리 스냅 — 시각 위치 = 최종 위치 보장
                   if (gizmoMode !== 'translate') return;
                   const st = usePlacedProductStore.getState();
                   const b = st.placed.find((pp) => pp.id === id);
                   if (!b) return;
                   const f = footprintXZ({ ...b, x: singleGroup.position.x, z: singleGroup.position.z });
                   const others = st.placed.filter((pp) => pp.id !== id && !pp.parentId);
-                  const sn = others.length ? computeSnap(f, others) : { dx: 0, dz: 0 };
-                  singleGroup.position.x += sn.dx;
-                  singleGroup.position.z += sn.dz;
+                  // ⭐ 스태킹: 다른 상품 발자국과 겹치면 그 **메시 윗면을 따라** 올라타며 이동.
+                  //   겹침 없으면 기존 모서리 스냅 + 바닥 높이 복귀.
+                  const surfY = stackSurfaceY(id, f, others);
+                  if (surfY !== null) {
+                    singleGroup.position.y = surfY - (b.lift ?? 0) * M; // 시각 보정(자식이 base lift 포함)
+                  } else {
+                    singleGroup.position.y = 0;
+                    const sn = others.length ? computeSnap(f, others) : { dx: 0, dz: 0 };
+                    singleGroup.position.x += sn.dx;
+                    singleGroup.position.z += sn.dz;
+                  }
                 }}
                 onMouseUp={() => {
-                  // 놓는 순간 그룹의 실제 변환을 store 로 커밋 — 기즈모 위치 = 최종 위치
+                  setGizmoDragging(false);
+                  // 놓는 순간 그룹의 실제 변환을 store 로 커밋 — 기즈모 위치 = 최종 위치.
+                  // 스태킹 중이었다면 표면 높이를 lift 로 확정.
                   const st = usePlacedProductStore.getState();
+                  const b = st.placed.find((pp) => pp.id === id);
+                  const newLift = b ? Math.max(0, Math.round((singleGroup.position.y + (b.lift ?? 0) * M) * 1000)) : undefined;
+                  singleGroup.position.y = 0; // 그룹 y 원복 — lift 는 store 값으로 자식이 반영
                   st.update(id, {
                     x: singleGroup.position.x,
                     z: singleGroup.position.z,
                     ry: ((singleGroup.rotation.y * 180) / Math.PI + 360) % 360,
+                    ...(newLift !== undefined ? { lift: newLift } : {}),
                   });
                 }}
               />
@@ -821,7 +837,7 @@ export function ProductPlacement() {
       )}
 
       {/* 가변 사이즈 리사이즈 핸들 — 단일 선택 + sizeRange 있는 축만 화살표 표시 */}
-      {selectedIds.length === 1 && !pending && (
+      {selectedIds.length === 1 && !pending && !gizmoDragging && (
         <ProductResizeHandles id={selectedIds[0]} />
       )}
 
@@ -1022,4 +1038,38 @@ function ProductResizeHandles({ id }: { id: string }) {
       })}
     </group>
   );
+}
+
+
+/**
+ * 스태킹 표면 높이 — 이동 중 상품의 발자국이 다른 상품과 겹치면, 겹치는 상품들의
+ * 메시에 위에서 아래로 레이캐스트해 **가장 높은 윗면 y(m)** 를 반환. 겹침 없으면 null.
+ * (충돌 시 밀어내는 대신 위로 올라타 배치 — 선반/책상 위 소품 배치 흐름)
+ */
+function stackSurfaceY(
+  selfId: string,
+  f: { minx: number; maxx: number; minz: number; maxz: number },
+  others: PlacedProduct[],
+): number | null {
+  const ray = new Raycaster();
+  const down = new Vector3(0, -1, 0);
+  const cx = (f.minx + f.maxx) / 2, cz = (f.minz + f.maxz) / 2;
+  let top: number | null = null;
+  for (const o of others) {
+    if (o.id === selfId) continue;
+    const of = footprintXZ(o);
+    const ox = Math.min(f.maxx, of.maxx) - Math.max(f.minx, of.minx);
+    const oz = Math.min(f.maxz, of.maxz) - Math.max(f.minz, of.minz);
+    // 발자국이 실제로 겹칠 때만 (얕은 접촉은 스냅에 양보)
+    if (ox < 0.05 || oz < 0.05) continue;
+    const g = placedGroupRefs.get(o.id);
+    if (!g) continue;
+    ray.set(new Vector3(cx, 50, cz), down);
+    const hits = ray.intersectObject(g, true);
+    if (hits.length > 0) {
+      const y = hits[0].point.y;
+      if (top === null || y > top) top = y;
+    }
+  }
+  return top;
 }
