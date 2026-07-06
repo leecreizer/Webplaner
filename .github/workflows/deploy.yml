@@ -4,9 +4,9 @@
 # Pages 가 자동 서빙한다.
 name: Deploy to GitHub Pages
 
+# 비공개 정책(2026-07-06): 웹플래너는 외부(Pages) 공개하지 않는다 — 자동 배포 중지.
+# 다시 공개하려면 Actions 탭에서 이 워크플로를 수동 실행(workflow_dispatch).
 on:
-  push:
-    branches: [main, feat/three-upgrade-ssgi]
   workflow_dispatch:
 
 permissions:
