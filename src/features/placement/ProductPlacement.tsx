@@ -6,7 +6,7 @@ import type { ThreeEvent } from '@react-three/fiber';
 import { requestShadowUpdate } from '@/engine/lighting/ShadowDemand';
 import { registerGizmo, isGizmoBusy } from '@/features/models/gizmoGuard';
 import { clearOtherSelections } from '@/features/selection/clearSelections';
-import { Edges, TransformControls, useGLTF } from '@react-three/drei';
+import { Edges, Html, TransformControls, useGLTF } from '@react-three/drei';
 import { HelperScaler, isHelperRegionName, replaceableSizeOf, pickReplaceableSize } from '@/domain/products/HelperScaler';
 import { readDpTypes, readDoorSlots } from '@/domain/products/ModelMarkers';
 import { usePlacedProductStore, type PendingProduct, type PlacedProduct, type DoorVariant } from './placedProductStore';
@@ -892,6 +892,8 @@ function ProductResizeHandles({ id }: { id: string }) {
     baseW: number; baseD: number; baseH: number; baseX: number; baseZ: number;
     startT: number;
   } | null>(null);
+  // 드래그 중 현재 값(mm) 라벨 — 조절 중인 축/값을 모델 옆에 표시
+  const [label, setLabel] = useState<{ axis: 'w' | 'd' | 'h'; value: number } | null>(null);
   if (!p || p.parentId) return null;
   const r = p.sizeRange;
   if (!r || (!r.w && !r.d && !r.h)) return null;
@@ -913,7 +915,7 @@ function ProductResizeHandles({ id }: { id: string }) {
     const rc = new Raycaster();
     rc.setFromCamera(nd, camera);
     const ro = rc.ray.origin, rd = rc.ray.direction;
-    const w0 = origin.clone().sub(ro);
+    const w0 = ro.clone().sub(origin); // ray원점 - 축원점 (부호 뒤집힘 버그 수정 — 드래그 방향 반전 원인)
     const a = rd.dot(rd), b = rd.dot(dir), c = dir.dot(dir);
     const dvec = rd.dot(w0), e = dir.dot(w0);
     const denom = a * c - b * b;
@@ -942,6 +944,7 @@ function ProductResizeHandles({ id }: { id: string }) {
       next = Math.max(rr.min, Math.min(rr.max, next));
       if (rr.gap > 0) next = rr.min + Math.round((next - rr.min) / rr.gap) * rr.gap;
       next = Math.round(next);
+      setLabel({ axis: d0.axis, value: next }); // 조절 중 값 표시
       const st = usePlacedProductStore.getState();
       if (d0.axis === 'h') { st.update(id, { h: next }); return; }
       // 폭/깊이 — 드래그한 면만 이동(반대 면 고정): 중심을 축 방향으로 절반 이동
@@ -955,8 +958,17 @@ function ProductResizeHandles({ id }: { id: string }) {
     };
     const onUp = () => {
       dragRef.current = null;
+      setLabel(null);
       window.removeEventListener('pointermove', onMove);
       window.removeEventListener('pointerup', onUp);
+      // 확정 치수를 호스트(어드민)로 통지 — 상품정보 패널의 사이즈에 반영
+      const cur = usePlacedProductStore.getState().placed.find((x) => x.id === id);
+      if (cur) {
+        window.parent?.postMessage(
+          { type: 'hp3:product-resized', code: cur.code, w: cur.w, d: cur.d, h: cur.h },
+          '*',
+        );
+      }
     };
     window.addEventListener('pointermove', onMove);
     window.addEventListener('pointerup', onUp);
@@ -970,6 +982,25 @@ function ProductResizeHandles({ id }: { id: string }) {
   const COLOR: Record<'w' | 'd' | 'h', string> = { w: '#f59e0b', d: '#f59e0b', h: '#3b82f6' };
   return (
     <group position={[p.x, 0, p.z]} rotation={[0, ryRad, 0]}>
+      {label && (
+        <Html
+          center
+          position={
+            label.axis === 'w' ? [0, lift + hM + 0.25, 0]
+            : label.axis === 'd' ? [0, lift + hM + 0.25, 0]
+            : [0, lift + hM + 0.35, 0]
+          }
+          style={{ pointerEvents: 'none' }}
+        >
+          <div style={{
+            background: '#7c3aed', color: '#fff', fontSize: 13, fontWeight: 700,
+            padding: '3px 10px', borderRadius: 6, whiteSpace: 'nowrap',
+            boxShadow: '0 2px 8px rgba(0,0,0,0.4)',
+          }}>
+            {label.axis === 'w' ? '폭' : label.axis === 'd' ? '깊이' : '높이'} {label.value.toLocaleString()}mm
+          </div>
+        </Html>
+      )}
       {handles.map(({ axis, side }) => {
         // 로컬 면 중앙 + 바깥 오프셋
         const off = 0.12;
