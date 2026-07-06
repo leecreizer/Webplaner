@@ -689,6 +689,13 @@ export function ProductPlacement() {
         const bodyId = st.selectedIds[0] ?? (st.placed.length ? st.placed[st.placed.length - 1].id : null);
         const body = st.placed.find((p) => p.id === bodyId);
         if (!body || !ad.doors?.length) return;
+        // 부착 정책: 없으면 붙이고 / 있으면 교체 / **같으면 그대로**
+        const existing = st.placed.filter((p) => p.parentId === body.id);
+        const sig = (codes: (string | undefined)[]) => codes.map((c) => c ?? '').sort().join('|');
+        if (existing.length > 0) {
+          if (sig(existing.map((p) => p.code)) === sig(ad.doors.map((dr) => dr.code))) return; // 동일 구성 — 유지
+          for (const c of existing) st.remove(c.id); // 다른 구성 — 기존 부착분 제거 후 교체
+        }
         const bw = (ad.bodyW || body.w) * M;
         const bd = (ad.bodyD || body.d) * M;
         // 좌/우 도어 개수 분배 → 몸통 폭 안에서 배치
