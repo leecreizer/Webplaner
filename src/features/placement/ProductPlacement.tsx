@@ -11,6 +11,8 @@ import { readDpTypes, readDoorSlots } from '@/domain/products/ModelMarkers';
 import { usePlacedProductStore, type PendingProduct, type PlacedProduct, type DoorVariant } from './placedProductStore';
 
 const M = 1 / 1000; // mm → m
+/** 배치 상품 id → 씬 그룹 — 단일 선택 기즈모를 실제 오브젝트에 직접 부착하기 위한 레지스트리. */
+const placedGroupRefs = new Map<string, Group>();
 /** 도어를 몸통 앞면에서 앞으로 띄우는 간격(m). 5mm. */
 const DOOR_FRONT_GAP = 5 * M;
 /** 서랍(M) 슬라이드 시작 지연(초) — 도어가 **완전히** 열린 뒤 서랍이 나오도록(도어 애니메이션 ~0.8s). */
@@ -515,6 +517,7 @@ const PlacedItem = memo(function PlacedItem({ p, sel, onDown, doorsOpen, doorOpe
 
   return (
     <group
+      ref={(g: Group | null) => { if (g) placedGroupRefs.set(p.id, g); else placedGroupRefs.delete(p.id); }}
       position={[p.x, 0, p.z]}
       rotation={[0, (p.ry * Math.PI) / 180, 0]}
       onPointerDown={(e) => { if (e.button !== 0) return; e.stopPropagation(); onDown(p.id, p.code, p.name, e.nativeEvent.shiftKey); }}
@@ -582,15 +585,7 @@ export function ProductPlacement() {
     if (!pivotObj || selectedIds.length === 0) return;
     const boxes = usePlacedProductStore.getState().placed.filter((p) => selectedIds.includes(p.id));
     if (boxes.length === 0) return;
-    if (boxes.length === 1) {
-      // 단일 선택 — 기즈모를 **모델 피봇**에 정확히: 상품 기준점(x, lift, z) + 회전(ry) 정렬.
-      // (이전: 회전 0 고정 + y=0 → 회전된 상품에서 축이 모델과 어긋나 보임)
-      const b = boxes[0];
-      pivotObj.position.set(b.x, (b.lift ?? 0) * M, b.z);
-      pivotObj.rotation.set(0, (-b.ry * Math.PI) / 180, 0);
-      lastPivot.current = { x: b.x, z: b.z, ry: (-b.ry * Math.PI) / 180 };
-      return;
-    }
+    // 단일 선택은 아래 렌더에서 기즈모를 상품 그룹에 **직접 부착** — 프록시 불필요.
     // 다중 선택 — 선택 무게중심 (그룹 이동/회전 기준점)
     const cx = boxes.reduce((s, b) => s + b.x, 0) / boxes.length;
     const cz = boxes.reduce((s, b) => s + b.z, 0) / boxes.length;
@@ -768,17 +763,60 @@ export function ProductPlacement() {
       {/* 선택 중심 피벗 + 기즈모 — 다중 선택 시 전체 이동/회전 (G=이동, R=회전) */}
       <object3D ref={setPivotObj} />
       {selectedIds.length > 0 && pivotObj && (
-        <TransformControls
-          ref={tcRef}
-          key={`gizmo-${selectedIds.join(',')}-${gizmoMode}`}
-          object={pivotObj}
-          mode={gizmoMode}
-          space="local" // 축이 모델(피봇) 방향을 따르게 — 회전된 모델에서도 화살표가 모델 기준
-          showX={gizmoMode === 'translate'}
-          showZ={gizmoMode === 'translate'}
-          showY={gizmoMode === 'rotate'}
-          onObjectChange={onPivotChange}
-        />
+        (() => {
+          // 단일 선택: 기즈모를 상품 그룹에 직접 부착 — 드래그 즉시 모델이 움직이고
+          // (프록시 델타 방식의 한 박자 지연·최종 위치 불일치 해소), 놓을 때 store 커밋.
+          const singleGroup = selectedIds.length === 1 ? placedGroupRefs.get(selectedIds[0]) : null;
+          if (singleGroup) {
+            const id = selectedIds[0];
+            return (
+              <TransformControls
+                ref={tcRef}
+                key={`gizmo-solo-${id}-${gizmoMode}`}
+                object={singleGroup}
+                mode={gizmoMode}
+                space="local"
+                showX={gizmoMode === 'translate'}
+                showZ={gizmoMode === 'translate'}
+                showY={gizmoMode === 'rotate'}
+                onObjectChange={() => {
+                  // 이동 중 인접 상품 모서리 스냅 — 시각 위치 = 최종 위치 보장
+                  if (gizmoMode !== 'translate') return;
+                  const st = usePlacedProductStore.getState();
+                  const b = st.placed.find((pp) => pp.id === id);
+                  if (!b) return;
+                  const f = footprintXZ({ ...b, x: singleGroup.position.x, z: singleGroup.position.z });
+                  const others = st.placed.filter((pp) => pp.id !== id && !pp.parentId);
+                  const sn = others.length ? computeSnap(f, others) : { dx: 0, dz: 0 };
+                  singleGroup.position.x += sn.dx;
+                  singleGroup.position.z += sn.dz;
+                }}
+                onMouseUp={() => {
+                  // 놓는 순간 그룹의 실제 변환을 store 로 커밋 — 기즈모 위치 = 최종 위치
+                  const st = usePlacedProductStore.getState();
+                  st.update(id, {
+                    x: singleGroup.position.x,
+                    z: singleGroup.position.z,
+                    ry: ((singleGroup.rotation.y * 180) / Math.PI + 360) % 360,
+                  });
+                }}
+              />
+            );
+          }
+          return (
+            <TransformControls
+              ref={tcRef}
+              key={`gizmo-${selectedIds.join(',')}-${gizmoMode}`}
+              object={pivotObj}
+              mode={gizmoMode}
+              space="local"
+              showX={gizmoMode === 'translate'}
+              showZ={gizmoMode === 'translate'}
+              showY={gizmoMode === 'rotate'}
+              onObjectChange={onPivotChange}
+            />
+          );
+        })()
       )}
 
       {/* 배치 모드: 바닥 인터랙션 평면 + 고스트 박스 */}
