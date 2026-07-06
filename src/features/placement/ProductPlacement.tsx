@@ -1,7 +1,8 @@
 import { Component, Suspense, memo, useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
-import { Box3, DoubleSide, Group, Mesh, MeshStandardMaterial, Object3D, Quaternion, Vector3 } from 'three';
+import { Box3, DoubleSide, Group, Mesh, MeshStandardMaterial, Object3D, Quaternion, Raycaster, Vector2, Vector3 } from 'three';
 import { standardToPhysical } from '@/domain/materials/standardToPhysical';
 import { useFrame, useThree } from '@react-three/fiber';
+import type { ThreeEvent } from '@react-three/fiber';
 import { requestShadowUpdate } from '@/engine/lighting/ShadowDemand';
 import { registerGizmo, isGizmoBusy } from '@/features/models/gizmoGuard';
 import { clearOtherSelections } from '@/features/selection/clearSelections';
@@ -668,7 +669,7 @@ export function ProductPlacement() {
     const onMsg = (e: MessageEvent) => {
       const d = e.data as { type?: string } & Partial<PendingProduct>;
       if (d && d.type === 'hp3:place-product') {
-        setPending({ name: d.name ?? '상품', code: d.code, w: d.w || 600, d: d.d || 600, h: d.h || 600, lift: d.lift || 0, modelUrl: d.modelUrl, color: d.color });
+        setPending({ name: d.name ?? '상품', code: d.code, w: d.w || 600, d: d.d || 600, h: d.h || 600, lift: d.lift || 0, modelUrl: d.modelUrl, color: d.color, sizeRange: (d as { sizeRange?: PendingProduct['sizeRange'] }).sizeRange });
       }
       if (d && d.type === 'hp3:toggle-doors') {
         // 도어 열림/닫힘 토글(애니메이션 확인). data.open이 boolean이면 그 값으로, 없으면 토글.
@@ -819,6 +820,11 @@ export function ProductPlacement() {
         })()
       )}
 
+      {/* 가변 사이즈 리사이즈 핸들 — 단일 선택 + sizeRange 있는 축만 화살표 표시 */}
+      {selectedIds.length === 1 && !pending && (
+        <ProductResizeHandles id={selectedIds[0]} />
+      )}
+
       {/* 배치 모드: 바닥 인터랙션 평면 + 고스트 박스 */}
       {pending && (
         <>
@@ -870,5 +876,119 @@ export function ProductPlacement() {
         </>
       )}
     </>
+  );
+}
+
+/**
+ * 상품 길이 변경 핸들 — 가변(sizeRange 설정) 축의 양쪽 면 중앙에 화살표(콘)를 띄우고,
+ * 드래그하면 해당 축 치수를 변경한다 (반대 면 고정, min/max 클램프, gap 스텝 스냅).
+ * 기즈모(TransformControls)와 별개의 경량 UI — 높이(h)는 윗면 화살표 하나.
+ */
+function ProductResizeHandles({ id }: { id: string }) {
+  const p = usePlacedProductStore((s) => s.placed.find((x) => x.id === id));
+  const { gl, camera } = useThree();
+  const dragRef = useRef<{
+    axis: 'w' | 'd' | 'h'; side: 1 | -1;
+    baseW: number; baseD: number; baseH: number; baseX: number; baseZ: number;
+    startT: number;
+  } | null>(null);
+  if (!p || p.parentId) return null;
+  const r = p.sizeRange;
+  if (!r || (!r.w && !r.d && !r.h)) return null;
+
+  const ryRad = (p.ry * Math.PI) / 180;
+  const cos = Math.cos(ryRad), sin = Math.sin(ryRad);
+  const wM = (p.renderW ?? p.w) * M, dM = (p.renderD ?? p.d) * M, hM = p.h * M;
+  const lift = (p.lift ?? 0) * M;
+  // 로컬 축 → 월드 (PlacedItem rotation +ry 규약)
+  const axisDirWorld = (axis: 'w' | 'd' | 'h', side: 1 | -1): [number, number, number] =>
+    axis === 'h' ? [0, side, 0]
+    : axis === 'w' ? [side * cos, 0, -side * sin]
+    : [side * sin, 0, side * cos];
+
+  /** 카메라 레이에서 (origin, dir) 축 위 최근접 파라미터 t — 축 방향 드래그 거리 측정 */
+  const axisT = (clientX: number, clientY: number, origin: Vector3, dir: Vector3): number | null => {
+    const rect = gl.domElement.getBoundingClientRect();
+    const nd = new Vector2(((clientX - rect.left) / rect.width) * 2 - 1, -(((clientY - rect.top) / rect.height) * 2 - 1));
+    const rc = new Raycaster();
+    rc.setFromCamera(nd, camera);
+    const ro = rc.ray.origin, rd = rc.ray.direction;
+    const w0 = origin.clone().sub(ro);
+    const a = rd.dot(rd), b = rd.dot(dir), c = dir.dot(dir);
+    const dvec = rd.dot(w0), e = dir.dot(w0);
+    const denom = a * c - b * b;
+    if (Math.abs(denom) < 1e-9) return null;
+    return (a * e - b * dvec) / denom; // 축 위 t (m)
+  };
+
+  const startDrag = (axis: 'w' | 'd' | 'h', side: 1 | -1) => (e: ThreeEvent<PointerEvent>) => {
+    if (e.button !== 0) return;
+    e.stopPropagation();
+    const dir = new Vector3(...axisDirWorld(axis, side));
+    const origin = new Vector3(p.x, lift + hM / 2, p.z);
+    const t0 = axisT(e.nativeEvent.clientX, e.nativeEvent.clientY, origin, dir);
+    if (t0 === null) return;
+    dragRef.current = { axis, side, baseW: p.w, baseD: p.d, baseH: p.h, baseX: p.x, baseZ: p.z, startT: t0 };
+    (e.target as Element).setPointerCapture(e.pointerId);
+    const onMove = (ev: PointerEvent) => {
+      const d0 = dragRef.current;
+      if (!d0) return;
+      const t = axisT(ev.clientX, ev.clientY, origin, dir);
+      if (t === null) return;
+      const deltaMm = (t - d0.startT) * 1000; // 화살표 방향으로 끈 거리(mm)
+      const rr = r[d0.axis]!;
+      const base = d0.axis === 'w' ? d0.baseW : d0.axis === 'd' ? d0.baseD : d0.baseH;
+      let next = base + deltaMm;
+      next = Math.max(rr.min, Math.min(rr.max, next));
+      if (rr.gap > 0) next = rr.min + Math.round((next - rr.min) / rr.gap) * rr.gap;
+      next = Math.round(next);
+      const st = usePlacedProductStore.getState();
+      if (d0.axis === 'h') { st.update(id, { h: next }); return; }
+      // 폭/깊이 — 드래그한 면만 이동(반대 면 고정): 중심을 축 방향으로 절반 이동
+      const grow = (next - base) / 2 * M;
+      const [ax, , az] = axisDirWorld(d0.axis, d0.side);
+      st.update(id, {
+        ...(d0.axis === 'w' ? { w: next } : { d: next }),
+        x: d0.baseX + ax * grow,
+        z: d0.baseZ + az * grow,
+      });
+    };
+    const onUp = () => {
+      dragRef.current = null;
+      window.removeEventListener('pointermove', onMove);
+      window.removeEventListener('pointerup', onUp);
+    };
+    window.addEventListener('pointermove', onMove);
+    window.addEventListener('pointerup', onUp);
+  };
+
+  const handles: { axis: 'w' | 'd' | 'h'; side: 1 | -1 }[] = [];
+  if (r.w) handles.push({ axis: 'w', side: 1 }, { axis: 'w', side: -1 });
+  if (r.d) handles.push({ axis: 'd', side: 1 }, { axis: 'd', side: -1 });
+  if (r.h) handles.push({ axis: 'h', side: 1 });
+
+  const COLOR: Record<'w' | 'd' | 'h', string> = { w: '#f59e0b', d: '#f59e0b', h: '#3b82f6' };
+  return (
+    <group position={[p.x, 0, p.z]} rotation={[0, ryRad, 0]}>
+      {handles.map(({ axis, side }) => {
+        // 로컬 면 중앙 + 바깥 오프셋
+        const off = 0.12;
+        const pos: [number, number, number] =
+          axis === 'w' ? [side * (wM / 2 + off), lift + hM / 2, 0]
+          : axis === 'd' ? [0, lift + hM / 2, side * (dM / 2 + off)]
+          : [0, lift + hM + off, 0];
+        // 콘이 바깥을 향하게 회전 (콘 기본 +Y)
+        const rot: [number, number, number] =
+          axis === 'h' ? [0, 0, 0]
+          : axis === 'w' ? [0, 0, side === 1 ? -Math.PI / 2 : Math.PI / 2]
+          : [side === 1 ? Math.PI / 2 : -Math.PI / 2, 0, 0];
+        return (
+          <mesh key={`${axis}${side}`} position={pos} rotation={rot} onPointerDown={startDrag(axis, side)} renderOrder={998}>
+            <coneGeometry args={[0.06, 0.16, 12]} />
+            <meshBasicMaterial color={COLOR[axis]} depthTest={false} transparent opacity={0.95} />
+          </mesh>
+        );
+      })}
+    </group>
   );
 }
