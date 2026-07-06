@@ -966,6 +966,38 @@ function ProductResizeHandles({ id }: { id: string }) {
       let next = base + deltaMm;
       next = Math.max(rr.min, Math.min(rr.max, next));
       if (rr.gap > 0) next = rr.min + Math.round((next - rr.min) / rr.gap) * rr.gap;
+      // ⭐ 리사이즈 스냅 — 드래그 중인 면이 인접 상품의 면과 SNAP_DIST 안이면 딱 맞춰
+      //   줄어들거나 늘어난다 (축 정렬 상태에서만, gap 스텝보다 우선).
+      if (d0.axis !== 'h') {
+        const ax = dir.x, az = dir.z;
+        const axisIsX = Math.abs(ax) > 0.9, axisIsZ = Math.abs(az) > 0.9;
+        if (axisIsX || axisIsZ) {
+          const st0 = usePlacedProductStore.getState();
+          const me = st0.placed.find((x) => x.id === id);
+          if (me) {
+            const a = axisIsX ? d0.baseX : d0.baseZ;           // 축 위 기준 중심 좌표(m)
+            const sgn = axisIsX ? Math.sign(ax) : Math.sign(az); // 드래그 면의 축 방향 부호
+            const faceCoord = a + sgn * (next / 2) * M;          // 현재 면 위치(m)
+            const myF = footprintXZ({ ...me, x: d0.baseX, z: d0.baseZ, [d0.axis]: next } as PlacedProduct);
+            for (const o of st0.placed) {
+              if (o.id === id || o.parentId) continue;
+              const of = footprintXZ(o);
+              // 수직축 구간이 겹칠 때만 (모서리 스냅과 동일 조건)
+              const perp = axisIsX
+                ? Math.min(myF.maxz, of.maxz) - Math.max(myF.minz, of.minz)
+                : Math.min(myF.maxx, of.maxx) - Math.max(myF.minx, of.minx);
+              if (perp < -SNAP_DIST) continue;
+              const cands = axisIsX ? [of.minx, of.maxx] : [of.minz, of.maxz];
+              for (const c of cands) {
+                if (Math.abs(faceCoord - c) < SNAP_DIST) {
+                  const snapped = Math.round(((c - a) / (sgn * M)) * 2);
+                  if (snapped >= rr.min && snapped <= rr.max) next = snapped;
+                }
+              }
+            }
+          }
+        }
+      }
       next = Math.round(next);
       setLabel({ axis: d0.axis, value: next }); // 조절 중 값 표시
       const st = usePlacedProductStore.getState();
