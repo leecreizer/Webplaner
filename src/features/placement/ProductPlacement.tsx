@@ -1,5 +1,5 @@
 import { Component, Suspense, memo, useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
-import { Box3, DoubleSide, Group, Mesh, MeshStandardMaterial, Object3D, Quaternion, Raycaster, Vector2, Vector3 } from 'three';
+import { Box3, DoubleSide, Group, Mesh, MeshStandardMaterial, Object3D, Plane, Quaternion, Raycaster, Vector2, Vector3 } from 'three';
 import { standardToPhysical } from '@/domain/materials/standardToPhysical';
 import { useFrame, useThree } from '@react-three/fiber';
 import type { ThreeEvent } from '@react-three/fiber';
@@ -12,6 +12,8 @@ import { readDpTypes, readDoorSlots } from '@/domain/products/ModelMarkers';
 import { usePlacedProductStore, type PendingProduct, type PlacedProduct, type DoorVariant } from './placedProductStore';
 
 const M = 1 / 1000; // mm → m
+/** 드래그 중 상태 세터 — PlacedItem 직접 드래그 시 리사이즈 핸들 숨김 공유용. */
+const setDraggingRef: { current: ((v: boolean) => void) | null } = { current: null };
 /** 배치 상품 id → 씬 그룹 — 단일 선택 기즈모를 실제 오브젝트에 직접 부착하기 위한 레지스트리. */
 const placedGroupRefs = new Map<string, Group>();
 /** 도어를 몸통 앞면에서 앞으로 띄우는 간격(m). 5mm. */
@@ -521,7 +523,15 @@ const PlacedItem = memo(function PlacedItem({ p, sel, onDown, doorsOpen, doorOpe
       ref={(g: Group | null) => { if (g) placedGroupRefs.set(p.id, g); else placedGroupRefs.delete(p.id); }}
       position={[p.x, 0, p.z]}
       rotation={[0, (p.ry * Math.PI) / 180, 0]}
-      onPointerDown={(e) => { if (e.button !== 0) return; e.stopPropagation(); onDown(p.id, p.code, p.name, e.nativeEvent.shiftKey); }}
+      onPointerDown={(e) => {
+        if (e.button !== 0) return;
+        e.stopPropagation();
+        onDown(p.id, p.code, p.name, e.nativeEvent.shiftKey);
+        // ⭐ 모델 직접 드래그 이동 — 기즈모 없이도 몸체를 잡고 끌면 이동 (스냅·스태킹 동일).
+        //   Shift(다중선택)·부속(도어)·기즈모 조작 중엔 제외.
+        if (e.nativeEvent.shiftKey || p.parentId || isGizmoBusy()) return;
+        startBodyDrag(e as ThreeEvent<PointerEvent>, p);
+      }}
     >
       {isDoor ? (
         // 힌지 피벗(바깥 변=슬롯 면)에서 회전 → 그 안에서 패널을 중앙으로 되돌림.
@@ -570,6 +580,7 @@ export function ProductPlacement() {
   const [pivotObj, setPivotObj] = useState<Object3D | null>(null);
   // 기즈모 드래그 중 여부 — 이동 중에는 리사이즈 핸들 숨김, 멈추면 다시 표시
   const [gizmoDragging, setGizmoDragging] = useState(false);
+  setDraggingRef.current = setGizmoDragging;
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const tcRef = useRef<any>(null); // TransformControls 인스턴스 — 핸들 위면 .axis 설정됨
   // 기즈모 가드 등록 — 핸들 호버/드래그 중 씬 선택 차단
@@ -1111,4 +1122,61 @@ function stackSurfaceY(
     }
   }
   return top;
+}
+
+
+/** 모델 몸체 직접 드래그 — 바닥 레이 기준으로 그룹을 즉시 이동(스냅+스태킹), 놓으면 store 커밋. */
+function startBodyDrag(e: ThreeEvent<PointerEvent>, p: PlacedProduct): void {
+  const g = placedGroupRefs.get(p.id);
+  if (!g) return;
+  const canvas = (e.nativeEvent.target as HTMLElement).closest('canvas') as HTMLCanvasElement | null;
+  if (!canvas) return;
+  const cam = e.camera;
+  const ground = new Plane(new Vector3(0, 1, 0), 0);
+  const toGround = (cx: number, cy: number): Vector3 | null => {
+    const r = canvas.getBoundingClientRect();
+    const nd = new Vector2(((cx - r.left) / r.width) * 2 - 1, -(((cy - r.top) / r.height) * 2 - 1));
+    const rc = new Raycaster();
+    rc.setFromCamera(nd, cam);
+    const pt = new Vector3();
+    return rc.ray.intersectPlane(ground, pt) ? pt : null;
+  };
+  const start = toGround(e.nativeEvent.clientX, e.nativeEvent.clientY);
+  if (!start) return;
+  const offX = start.x - p.x, offZ = start.z - p.z;
+  const downX = e.nativeEvent.clientX, downY = e.nativeEvent.clientY;
+  let moved = false;
+  const onMove = (ev: PointerEvent) => {
+    if (!moved && Math.hypot(ev.clientX - downX, ev.clientY - downY) < 4) return;
+    if (!moved) { moved = true; setDraggingRef.current?.(true); }
+    const gp = toGround(ev.clientX, ev.clientY);
+    if (!gp) return;
+    let nx = gp.x - offX, nz = gp.z - offZ;
+    const st = usePlacedProductStore.getState();
+    const others = st.placed.filter((pp) => pp.id !== p.id && !pp.parentId);
+    const f = footprintXZ({ ...p, x: nx, z: nz });
+    const surfY = stackSurfaceY(p.id, f, others);
+    if (surfY !== null) {
+      g.position.y = surfY - (p.lift ?? 0) * M;
+    } else {
+      g.position.y = 0;
+      const sn = others.length ? computeSnap(f, others) : { dx: 0, dz: 0 };
+      nx += sn.dx; nz += sn.dz;
+    }
+    g.position.x = nx;
+    g.position.z = nz;
+  };
+  const onUp = () => {
+    window.removeEventListener('pointermove', onMove);
+    window.removeEventListener('pointerup', onUp);
+    setDraggingRef.current?.(false);
+    if (!moved) return;
+    const st = usePlacedProductStore.getState();
+    const newLift = Math.max(0, Math.round((g.position.y + (p.lift ?? 0) * M) * 1000));
+    g.position.y = 0;
+    st.update(p.id, { x: g.position.x, z: g.position.z, lift: newLift });
+    window.parent?.postMessage({ type: 'hp3:product-resized', code: p.code, w: p.w, d: p.d, h: p.h }, '*');
+  };
+  window.addEventListener('pointermove', onMove);
+  window.addEventListener('pointerup', onUp);
 }
