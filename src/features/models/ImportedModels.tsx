@@ -282,6 +282,7 @@ function ModelBody({ model, obj: rawObj }: { model: ImportedModel; obj: Object3D
           }}
           object={groupRef.current}
           mode={gizmoMode}
+          space="local" // 축이 모델(피봇) 방향을 따르게 — 회전된 모델에서도 화살표가 모델 기준
           onMouseUp={commitTransform}
           onObjectChange={commitTransform}
         />

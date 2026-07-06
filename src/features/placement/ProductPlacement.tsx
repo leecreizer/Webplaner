@@ -582,6 +582,16 @@ export function ProductPlacement() {
     if (!pivotObj || selectedIds.length === 0) return;
     const boxes = usePlacedProductStore.getState().placed.filter((p) => selectedIds.includes(p.id));
     if (boxes.length === 0) return;
+    if (boxes.length === 1) {
+      // 단일 선택 — 기즈모를 **모델 피봇**에 정확히: 상품 기준점(x, lift, z) + 회전(ry) 정렬.
+      // (이전: 회전 0 고정 + y=0 → 회전된 상품에서 축이 모델과 어긋나 보임)
+      const b = boxes[0];
+      pivotObj.position.set(b.x, (b.lift ?? 0) * M, b.z);
+      pivotObj.rotation.set(0, (-b.ry * Math.PI) / 180, 0);
+      lastPivot.current = { x: b.x, z: b.z, ry: (-b.ry * Math.PI) / 180 };
+      return;
+    }
+    // 다중 선택 — 선택 무게중심 (그룹 이동/회전 기준점)
     const cx = boxes.reduce((s, b) => s + b.x, 0) / boxes.length;
     const cz = boxes.reduce((s, b) => s + b.z, 0) / boxes.length;
     pivotObj.position.set(cx, 0, cz);
@@ -763,6 +773,7 @@ export function ProductPlacement() {
           key={`gizmo-${selectedIds.join(',')}-${gizmoMode}`}
           object={pivotObj}
           mode={gizmoMode}
+          space="local" // 축이 모델(피봇) 방향을 따르게 — 회전된 모델에서도 화살표가 모델 기준
           showX={gizmoMode === 'translate'}
           showZ={gizmoMode === 'translate'}
           showY={gizmoMode === 'rotate'}
