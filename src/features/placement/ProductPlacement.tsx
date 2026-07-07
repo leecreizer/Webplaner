@@ -608,6 +608,12 @@ export function ProductPlacement() {
     lastPivot.current = { x: cx, z: cz, ry: 0, y: 0 };
   }, [pivotObj, selectedIds]);
 
+  // 단일 선택 기즈모의 동반 이동 캡처 — onMouseDown 시점의 몸통 기준값 + follower live Group.
+  const soloFollowRef = useRef<{
+    base: { x: number; z: number; ry: number; lift: number };
+    followers: { f: PlacedProduct; g: Group }[];
+  } | null>(null);
+
   // 박스 클릭 선택 (Shift = 다중 토글), 호스트에 선택 정보 전송.
   // useCallback: PlacedItem memo가 유지되도록 안정 참조. (select는 zustand 액션이라 안정)
   const onBoxDown = useCallback((id: string, code: string | undefined, name: string, shift: boolean) => {
@@ -800,24 +806,54 @@ export function ProductPlacement() {
                 showX
                 showY
                 showZ
-                onMouseDown={() => setGizmoDragging(true)}
+                onMouseDown={() => {
+                  setGizmoDragging(true);
+                  // ⭐ 동반 이동 — 드래그 시작 시점의 몸통 기준값 + 부착 상품 캡처
+                  const st = usePlacedProductStore.getState();
+                  const b = st.placed.find((pp) => pp.id === id);
+                  soloFollowRef.current = b
+                    ? {
+                        base: { x: b.x, z: b.z, ry: b.ry, lift: b.lift ?? 0 },
+                        followers: followerGroups(b, st.placed),
+                      }
+                    : null;
+                }}
                 onObjectChange={() => {
-                  if (gizmoMode !== 'translate') return;
+                  const fw = soloFollowRef.current;
                   const st = usePlacedProductStore.getState();
                   const b = st.placed.find((pp) => pp.id === id);
                   if (!b) return;
-                  const f = footprintXZ({ ...b, x: singleGroup.position.x, z: singleGroup.position.z });
-                  const others = st.placed.filter((pp) => pp.id !== id && !pp.parentId);
-                  // ⭐ 스태킹: 다른 상품 발자국과 겹치면 그 **메시 윗면을 따라** 올라타며 이동.
-                  //   겹침 없으면 기존 모서리 스냅 + 바닥 높이 복귀.
-                  const surfY = stackSurfaceY(id, f, others);
-                  if (surfY !== null) {
-                    singleGroup.position.y = surfY - (b.lift ?? 0) * M; // 시각 보정(자식이 base lift 포함)
-                  } else {
-                    singleGroup.position.y = 0;
-                    const sn = others.length ? computeSnap(f, others) : { dx: 0, dz: 0 };
-                    singleGroup.position.x += sn.dx;
-                    singleGroup.position.z += sn.dz;
+                  const followerIds = new Set(fw?.followers.map((x) => x.f.id) ?? []);
+                  if (gizmoMode === 'translate') {
+                    const f = footprintXZ({ ...b, x: singleGroup.position.x, z: singleGroup.position.z });
+                    // 자기 자식(follower)에 스냅/올라타는 자가참조 방지
+                    const others = st.placed.filter((pp) => pp.id !== id && !pp.parentId && !followerIds.has(pp.id));
+                    // ⭐ 스태킹: 다른 상품 발자국과 겹치면 그 **메시 윗면을 따라** 올라타며 이동.
+                    //   겹침 없으면 기존 모서리 스냅 + 바닥 높이 복귀.
+                    const surfY = stackSurfaceY(id, f, others);
+                    if (surfY !== null) {
+                      singleGroup.position.y = surfY - (b.lift ?? 0) * M; // 시각 보정(자식이 base lift 포함)
+                    } else {
+                      singleGroup.position.y = 0;
+                      const sn = others.length ? computeSnap(f, others) : { dx: 0, dz: 0 };
+                      singleGroup.position.x += sn.dx;
+                      singleGroup.position.z += sn.dz;
+                    }
+                  }
+                  // follower 들도 몸통 델타만큼 실시간 추종 (이동 + 몸통 중심 기준 회전)
+                  if (fw && fw.followers.length) {
+                    const dx = singleGroup.position.x - fw.base.x;
+                    const dz = singleGroup.position.z - fw.base.z;
+                    const dy = singleGroup.position.y;
+                    const dRy = singleGroup.rotation.y - (fw.base.ry * Math.PI) / 180;
+                    const cos = Math.cos(dRy), sin = Math.sin(dRy);
+                    for (const { f: fo, g: fg } of fw.followers) {
+                      const rx = fo.x - fw.base.x, rz = fo.z - fw.base.z; // 몸통 기준 오프셋
+                      fg.position.x = fw.base.x + dx + rx * cos + rz * sin;
+                      fg.position.z = fw.base.z + dz - rx * sin + rz * cos;
+                      fg.position.y = dy;
+                      fg.rotation.y = ((fo.ry * Math.PI) / 180) + dRy;
+                    }
                   }
                 }}
                 onMouseUp={() => {
@@ -834,6 +870,27 @@ export function ProductPlacement() {
                     ry: ((singleGroup.rotation.y * 180) / Math.PI + 360) % 360,
                     ...(newLift !== undefined ? { lift: newLift } : {}),
                   });
+                  // follower 커밋 — 도어는 몸통 커밋에 반응하는 정렬 효과가 재배치하므로 제외
+                  const fw = soloFollowRef.current;
+                  soloFollowRef.current = null;
+                  if (fw && b) {
+                    const dx = singleGroup.position.x - fw.base.x;
+                    const dz = singleGroup.position.z - fw.base.z;
+                    const dRy = singleGroup.rotation.y - (fw.base.ry * Math.PI) / 180;
+                    const dLift = newLift !== undefined ? newLift - fw.base.lift : 0;
+                    const cos = Math.cos(dRy), sin = Math.sin(dRy);
+                    for (const { f: fo, g: fg } of fw.followers) {
+                      fg.position.y = 0;
+                      if (fo.parentId) continue;
+                      const rx = fo.x - fw.base.x, rz = fo.z - fw.base.z;
+                      st.update(fo.id, {
+                        x: fw.base.x + dx + rx * cos + rz * sin,
+                        z: fw.base.z + dz - rx * sin + rz * cos,
+                        ry: (fo.ry + (dRy * 180) / Math.PI + 360) % 360,
+                        lift: Math.max(0, (fo.lift ?? 0) + dLift),
+                      });
+                    }
+                  }
                 }}
               />
             );
@@ -1125,6 +1182,46 @@ function stackSurfaceY(
 }
 
 
+/**
+ * 몸통 이동 시 함께 움직여야 하는 부착 상품 수집 — 드래그 시작 시점의 기하 판정(BFS).
+ * ① parentId 도어, ② 발자국 중심이 host 발자국 안 + 바닥높이가 host 바닥 위~윗면+5cm
+ * (내부 수납·윗면 스태킹). 올린 것 위에 또 올린 것도 연쇄 포함. 관계는 저장하지 않는다.
+ */
+function collectFollowers(body: PlacedProduct, placed: PlacedProduct[]): PlacedProduct[] {
+  const out = new Map<string, PlacedProduct>();
+  const queue: PlacedProduct[] = [body];
+  while (queue.length) {
+    const host = queue.pop()!;
+    const hf = footprintXZ(host);
+    const hostBottom = (host.lift ?? 0) * M;
+    const hostTop = hostBottom + host.h * M;
+    for (const o of placed) {
+      if (o.id === body.id || out.has(o.id)) continue;
+      if (o.parentId) {
+        if (o.parentId === host.id) out.set(o.id, o);
+        continue;
+      }
+      const of = footprintXZ(o);
+      const ocx = (of.minx + of.maxx) / 2, ocz = (of.minz + of.maxz) / 2;
+      if (ocx < hf.minx - 0.01 || ocx > hf.maxx + 0.01 || ocz < hf.minz - 0.01 || ocz > hf.maxz + 0.01) continue;
+      const bottom = (o.lift ?? 0) * M;
+      // host보다 바닥이 낮으면 내가 올라탄 받침이므로 제외
+      if (bottom > hostBottom + 0.001 && bottom < hostTop + 0.05) {
+        out.set(o.id, o);
+        queue.push(o);
+      }
+    }
+  }
+  return [...out.values()];
+}
+
+/** follower 의 live Group 페어 — 그룹이 아직 마운트 안 된 항목은 제외. */
+function followerGroups(body: PlacedProduct, placed: PlacedProduct[]): { f: PlacedProduct; g: Group }[] {
+  return collectFollowers(body, placed)
+    .map((f) => ({ f, g: placedGroupRefs.get(f.id) }))
+    .filter((x): x is { f: PlacedProduct; g: Group } => !!x.g);
+}
+
 /** 모델 몸체 직접 드래그 — 바닥 레이 기준으로 그룹을 즉시 이동(스냅+스태킹), 놓으면 store 커밋. */
 function startBodyDrag(e: ThreeEvent<PointerEvent>, p: PlacedProduct): void {
   const g = placedGroupRefs.get(p.id);
@@ -1145,6 +1242,9 @@ function startBodyDrag(e: ThreeEvent<PointerEvent>, p: PlacedProduct): void {
   if (!start) return;
   const offX = start.x - p.x, offZ = start.z - p.z;
   const downX = e.nativeEvent.clientX, downY = e.nativeEvent.clientY;
+  // ⭐ 동반 이동 — 드래그 시작 시점에 몸통에 부착된 상품(도어+위/안의 상품)을 캡처.
+  const followers = followerGroups(p, usePlacedProductStore.getState().placed);
+  const followerIds = new Set(followers.map((x) => x.f.id));
   let moved = false;
   const onMove = (ev: PointerEvent) => {
     if (!moved && Math.hypot(ev.clientX - downX, ev.clientY - downY) < 4) return;
@@ -1153,7 +1253,8 @@ function startBodyDrag(e: ThreeEvent<PointerEvent>, p: PlacedProduct): void {
     if (!gp) return;
     let nx = gp.x - offX, nz = gp.z - offZ;
     const st = usePlacedProductStore.getState();
-    const others = st.placed.filter((pp) => pp.id !== p.id && !pp.parentId);
+    // 자기 자식(follower)에 스냅/올라타는 자가참조 방지
+    const others = st.placed.filter((pp) => pp.id !== p.id && !pp.parentId && !followerIds.has(pp.id));
     const f = footprintXZ({ ...p, x: nx, z: nz });
     const surfY = stackSurfaceY(p.id, f, others);
     if (surfY !== null) {
@@ -1165,6 +1266,13 @@ function startBodyDrag(e: ThreeEvent<PointerEvent>, p: PlacedProduct): void {
     }
     g.position.x = nx;
     g.position.z = nz;
+    // follower 들도 몸통 델타만큼 실시간 이동
+    const dx = nx - p.x, dz = nz - p.z, dy = g.position.y;
+    for (const { f: fo, g: fg } of followers) {
+      fg.position.x = fo.x + dx;
+      fg.position.z = fo.z + dz;
+      fg.position.y = dy;
+    }
   };
   const onUp = () => {
     window.removeEventListener('pointermove', onMove);
@@ -1173,8 +1281,15 @@ function startBodyDrag(e: ThreeEvent<PointerEvent>, p: PlacedProduct): void {
     if (!moved) return;
     const st = usePlacedProductStore.getState();
     const newLift = Math.max(0, Math.round((g.position.y + (p.lift ?? 0) * M) * 1000));
+    const dx = g.position.x - p.x, dz = g.position.z - p.z, dLift = newLift - (p.lift ?? 0);
     g.position.y = 0;
     st.update(p.id, { x: g.position.x, z: g.position.z, lift: newLift });
+    // follower 커밋 — 도어(parentId)는 몸통 커밋에 반응하는 정렬 효과가 재배치하므로 제외
+    for (const { f: fo, g: fg } of followers) {
+      fg.position.y = 0;
+      if (fo.parentId) continue;
+      st.update(fo.id, { x: fo.x + dx, z: fo.z + dz, lift: Math.max(0, (fo.lift ?? 0) + dLift) });
+    }
     window.parent?.postMessage({ type: 'hp3:product-resized', code: p.code, w: p.w, d: p.d, h: p.h }, '*');
   };
   window.addEventListener('pointermove', onMove);
