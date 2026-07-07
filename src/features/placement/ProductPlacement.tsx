@@ -209,6 +209,16 @@ function FittedModel({ url, p, sel, ghost = false }: { url: string; p: PlacedPro
 
   const { obj, scale, pos, dpTypes, doorSlots, selSize, bodyCx, bodyCz, bodyMinY, drawers } = useMemo(() => {
     const { clone, scaler, useHelper, dpTypes } = built;
+    // ⭐ 측정 좌표계 격리 — clone은 마운트 후에도 재계산되므로, 상위(배치 그룹 x/z/ry)와 자기
+    //   변환(pos/scale 프롭)이 붙은 채 bbox/슬롯을 재면 월드 좌표가 섞여 pos 정렬값이 오염된다
+    //   (리사이즈 드래그 시 깜빡임·위치 이탈). 측정 동안 부모에서 분리+identity(최초 렌더와 동일한
+    //   로컬 기준)로 되돌리고, 끝나면 원상 복구한다. (R3F가 커밋 시 프롭을 다시 적용)
+    const holder = clone.parent;
+    const savedPos = clone.position.clone(), savedQuat = clone.quaternion.clone(), savedScale = clone.scale.clone();
+    if (holder) holder.remove(clone);
+    clone.position.set(0, 0, 0); clone.quaternion.identity(); clone.scale.set(1, 1, 1);
+    clone.updateMatrixWorld(true);
+    try {
     // 크기 정책: 몸통(변형 대상 메시)을 입력 치수(p.w/h/d)에 맞춰 helper 영역 기준 스트레치.
     // (GLB는 변환 시 mm→m 정규화 → origSize도 미터이므로 delta가 정상 범위. replaceableW
     //  구성품은 isTransformable에서 제외되어 고정 크기 유지된다.)
@@ -329,6 +339,12 @@ function FittedModel({ url, p, sel, ghost = false }: { url: string; p: PlacedPro
       bodyCx: center.x * sx, bodyCz: center.z * sz, bodyMinY: box.min.y * sy,
       drawers,
     };
+    } finally {
+      // 측정 좌표계 격리 해제 — 마운트 변환/부모 복구
+      clone.position.copy(savedPos); clone.quaternion.copy(savedQuat); clone.scale.copy(savedScale);
+      if (holder) holder.add(clone);
+      clone.updateMatrixWorld(true);
+    }
   }, [built, p.w, p.d, p.h, p.lift, p.slotPos]);
 
   // ghost 모델 비동기 선컴파일 (KHR_parallel_shader_compile 활용). 실패해도 그냥 표시.
