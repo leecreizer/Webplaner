@@ -16,6 +16,9 @@ const M = 1 / 1000; // mm → m
 const setDraggingRef: { current: ((v: boolean) => void) | null } = { current: null };
 /** 배치 상품 id → 씬 그룹 — 단일 선택 기즈모를 실제 오브젝트에 직접 부착하기 위한 레지스트리. */
 const placedGroupRefs = new Map<string, Group>();
+
+/** 리사이즈 핸들 호버/드래그 중 — 이때 다른 상품 클릭 선택·몸체 드래그를 차단(기즈모 가드와 동일 목적). */
+let resizeHandleBusy = false;
 /** 도어를 몸통 앞면에서 앞으로 띄우는 간격(m). 5mm. */
 const DOOR_FRONT_GAP = 5 * M;
 /** 서랍(M) 슬라이드 시작 지연(초) — 도어가 **완전히** 열린 뒤 서랍이 나오도록(도어 애니메이션 ~0.8s). */
@@ -557,7 +560,7 @@ const PlacedItem = memo(function PlacedItem({ p, sel, onDown, doorsOpen, doorOpe
         onDown(p.id, p.code, p.name, e.nativeEvent.shiftKey);
         // ⭐ 모델 직접 드래그 이동 — 기즈모 없이도 몸체를 잡고 끌면 이동 (스냅·스태킹 동일).
         //   Shift(다중선택)·부속(도어)·기즈모 조작 중엔 제외.
-        if (e.nativeEvent.shiftKey || p.parentId || isGizmoBusy()) return;
+        if (e.nativeEvent.shiftKey || p.parentId || isGizmoBusy() || resizeHandleBusy) return;
         startBodyDrag(e as ThreeEvent<PointerEvent>, p);
       }}
     >
@@ -645,7 +648,7 @@ export function ProductPlacement() {
   // 박스 클릭 선택 (Shift = 다중 토글), 호스트에 선택 정보 전송.
   // useCallback: PlacedItem memo가 유지되도록 안정 참조. (select는 zustand 액션이라 안정)
   const onBoxDown = useCallback((id: string, code: string | undefined, name: string, shift: boolean) => {
-    if (isGizmoBusy()) return; // 기즈모 핸들 조작 중 — 뒤 상품 오선택 방지
+    if (isGizmoBusy() || resizeHandleBusy) return; // 기즈모/리사이즈 핸들 조작 중 — 뒤 상품 오선택 방지 (겹쳐도 선택 안 바뀜)
     select(id, shift);
     clearOtherSelections('product'); // 상품 선택 시 벽/모델/모듈 해제
     const ids = usePlacedProductStore.getState().selectedIds;
@@ -1014,6 +1017,8 @@ function ProductResizeHandles({ id }: { id: string }) {
   } | null>(null);
   // 드래그 중 현재 값(mm) 라벨 — 조절 중인 축/값을 모델 옆에 표시
   const [label, setLabel] = useState<{ axis: 'w' | 'd' | 'h'; value: number } | null>(null);
+  // 언마운트(선택 해제 등) 시 선택 차단 플래그 잔류 방지
+  useEffect(() => () => { resizeHandleBusy = false; }, []);
   if (!p || p.parentId) return null;
   const r = p.sizeRange;
   if (!r || (!r.w && !r.d && !r.h)) return null;
@@ -1051,6 +1056,12 @@ function ProductResizeHandles({ id }: { id: string }) {
     const t0 = axisT(e.nativeEvent.clientX, e.nativeEvent.clientY, origin, dir);
     if (t0 === null) return;
     dragRef.current = { axis, side, baseW: p.w, baseD: p.d, baseH: p.h, baseX: p.x, baseZ: p.z, startT: t0 };
+    resizeHandleBusy = true; // 드래그 동안 다른 상품 선택 차단
+    // ⭐ 도어가 열려 있으면 리사이즈 동안 닫는다 — 열린 채 몸통 치수가 바뀌면 힌지 피벗/슬롯이
+    //   매 프레임 재계산되며 도어 위치가 깨진다. 놓으면 새 치수 기준으로 다시 연다.
+    const st00 = usePlacedProductStore.getState();
+    const reopenDoors = st00.doorsOpen;
+    if (reopenDoors) st00.setDoorsOpen(false);
     (e.target as Element).setPointerCapture(e.pointerId);
     const onMove = (ev: PointerEvent) => {
       const d0 = dragRef.current;
@@ -1132,6 +1143,8 @@ function ProductResizeHandles({ id }: { id: string }) {
     const onUp = () => {
       dragRef.current = null;
       setLabel(null);
+      resizeHandleBusy = false;
+      if (reopenDoors) usePlacedProductStore.getState().setDoorsOpen(true); // 새 치수 기준으로 다시 열기
       window.removeEventListener('pointermove', onMove);
       window.removeEventListener('pointerup', onUp);
       // 확정 치수를 호스트(어드민)로 통지 — 상품정보 패널의 사이즈에 반영
@@ -1187,7 +1200,15 @@ function ProductResizeHandles({ id }: { id: string }) {
           : axis === 'w' ? [0, 0, side === 1 ? -Math.PI / 2 : Math.PI / 2]
           : [side === 1 ? Math.PI / 2 : -Math.PI / 2, 0, 0];
         return (
-          <mesh key={`${axis}${side}`} position={pos} rotation={rot} onPointerDown={startDrag(axis, side)} renderOrder={998}>
+          <mesh
+            key={`${axis}${side}`}
+            position={pos}
+            rotation={rot}
+            onPointerDown={startDrag(axis, side)}
+            onPointerOver={() => { resizeHandleBusy = true; }}
+            onPointerOut={() => { if (!dragRef.current) resizeHandleBusy = false; }}
+            renderOrder={998}
+          >
             <coneGeometry args={[0.06, 0.16, 12]} />
             <meshBasicMaterial color={COLOR[axis]} depthTest={false} transparent opacity={0.95} />
           </mesh>
@@ -1234,8 +1255,9 @@ function stackSurfaceY(
 
 /**
  * 몸통 이동 시 함께 움직여야 하는 부착 상품 수집 — 드래그 시작 시점의 기하 판정(BFS).
- * ① parentId 도어, ② 발자국 중심이 host 발자국 안 + 바닥높이가 host 바닥 위~윗면+5cm
- * (내부 수납·윗면 스태킹). 올린 것 위에 또 올린 것도 연쇄 포함. 관계는 저장하지 않는다.
+ * ① parentId 도어, ② **내부 수납만**: 발자국 중심이 host 발자국 안 + 바닥높이가 host 바닥 위
+ * ~윗면 **아래**(안쪽). 윗면 위에 올라탄 상품(EP·서라운딩 등 별도 배치)은 묶이지 않는다.
+ * 내부 상품 위에 또 올린 것은 연쇄 포함. 관계는 저장하지 않는다.
  */
 function collectFollowers(body: PlacedProduct, placed: PlacedProduct[]): PlacedProduct[] {
   const out = new Map<string, PlacedProduct>();
@@ -1255,8 +1277,8 @@ function collectFollowers(body: PlacedProduct, placed: PlacedProduct[]): PlacedP
       const ocx = (of.minx + of.maxx) / 2, ocz = (of.minz + of.maxz) / 2;
       if (ocx < hf.minx - 0.01 || ocx > hf.maxx + 0.01 || ocz < hf.minz - 0.01 || ocz > hf.maxz + 0.01) continue;
       const bottom = (o.lift ?? 0) * M;
-      // host보다 바닥이 낮으면 내가 올라탄 받침이므로 제외
-      if (bottom > hostBottom + 0.001 && bottom < hostTop + 0.05) {
+      // host보다 바닥이 낮으면 받침(내가 올라탄 쪽), 윗면 이상이면 위에 올라탄 별도 상품(EP/서라운딩) — 모두 제외
+      if (bottom > hostBottom + 0.001 && bottom < hostTop - 0.05) {
         out.set(o.id, o);
         queue.push(o);
       }
