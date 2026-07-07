@@ -855,6 +855,7 @@ export function ProductPlacement() {
                       fg.rotation.y = ((fo.ry * Math.PI) / 180) + dRy;
                     }
                   }
+                  requestShadowUpdate(); // 라이브 이동/회전은 store를 안 거치므로 섀도맵 직접 갱신
                 }}
                 onMouseUp={() => {
                   setGizmoDragging(false);
@@ -1273,6 +1274,7 @@ function startBodyDrag(e: ThreeEvent<PointerEvent>, p: PlacedProduct): void {
       fg.position.z = fo.z + dz;
       fg.position.y = dy;
     }
+    requestShadowUpdate(); // 라이브 이동은 store를 안 거치므로 섀도맵 직접 갱신
   };
   const onUp = () => {
     window.removeEventListener('pointermove', onMove);
