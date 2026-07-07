@@ -3,6 +3,7 @@ import {
   Mesh,
   Box3,
   Vector3,
+  Matrix4,
   BufferAttribute,
 } from 'three';
 
@@ -27,10 +28,23 @@ import {
 export class HelperScaler {
   private readonly origSize: Vector3;
   private readonly regions: ScaleRegion[];
+  /** 마지막 applyResize 목표 — 재호출 시 차분만 적용해 같은 인스턴스로 반복 리사이즈 가능. */
+  private readonly lastTarget: Vector3;
+
+  /** 변형 대상 메시의 빌드 시점 월드 행렬(+역행렬) — 마운트 후 재호출 대비. */
+  private readonly meshMats: Map<Mesh, { mat: Matrix4; inv: Matrix4 }>;
 
   private constructor(origSize: Vector3, regions: ScaleRegion[]) {
     this.origSize = origSize;
     this.regions = regions;
+    this.lastTarget = origSize.clone();
+    this.meshMats = new Map();
+    for (const r of regions) for (const v of r.verts) {
+      if (!this.meshMats.has(v.mesh)) {
+        const mat = v.mesh.matrixWorld.clone();
+        this.meshMats.set(v.mesh, { mat, inv: mat.clone().invert() });
+      }
+    }
   }
 
   /** 인식된 helper 영역 개수. 0이면 이 모델은 helper 스트레치 불가(스케일 폴백 판단용). */
@@ -111,8 +125,14 @@ export class HelperScaler {
 
       const verts = collectVertices(targetMeshes, box);
       const hotspots = hotspotNode ? collectHotspots(hotspotNode, box) : [];
+      // 빌드 시점 월드 행렬 캐시 — 마운트 후 상위 그룹(위치/회전/미러)이 붙어도
+      // applyResize 재호출이 빌드 좌표계 기준으로 일관되게 동작하게 한다.
+      const hotspotRefs: HotspotRef[] = hotspots.map((h) => {
+        const pm = h.parent ? h.parent.matrixWorld.clone() : new Matrix4();
+        return { node: h, parentMat: pm, parentInv: pm.clone().invert() };
+      });
 
-      regions.push({ axis, sign, verts, hotspots, shareDivisor: 1 });
+      regions.push({ axis, sign, verts, hotspots: hotspotRefs, shareDivisor: 1 });
     }
 
     // 축별 distinct sign 수 — 델타 분배 기준 (양/음 모두 있으면 2 → 절반씩).
@@ -126,13 +146,20 @@ export class HelperScaler {
     return new HelperScaler(origSize, regions);
   }
 
-  /** 목표 치수(m)에 맞춰 변형 대상 메시 정점과 hotspot 위치를 이동한다. */
+  /**
+   * 목표 치수(m)에 맞춰 변형 대상 메시 정점과 hotspot 위치를 이동한다.
+   * **차분 적용** — 마지막 목표에서 이번 목표까지의 델타만 이동하므로, clone/build를 반복하지
+   * 않고 같은 인스턴스로 연속 리사이즈(드래그)가 가능하다. 좌표 변환은 빌드 시점에 캐시한
+   * 월드 행렬을 사용해, 마운트 후 상위 그룹 변환(위치/회전/미러)의 영향을 받지 않는다.
+   */
   applyResize(target: Vector3): void {
     const delta = {
-      x: target.x - this.origSize.x,
-      y: target.y - this.origSize.y,
-      z: target.z - this.origSize.z,
+      x: target.x - this.lastTarget.x,
+      y: target.y - this.lastTarget.y,
+      z: target.z - this.lastTarget.z,
     };
+    if (delta.x === 0 && delta.y === 0 && delta.z === 0) return;
+    this.lastTarget.copy(target);
 
     const dirtyGeoms = new Set<Mesh>();
     const tmp = new Vector3();
@@ -145,19 +172,20 @@ export class HelperScaler {
       for (const v of r.verts) {
         const attr = v.mesh.geometry.getAttribute('position') as BufferAttribute;
         // 로컬 단위·축(mm·Z-up 등)과 월드 단위·축(m·Y-up)이 다를 수 있으므로
-        // 월드공간으로 변환해 이동한 뒤 다시 로컬로 되돌린다.
+        // 빌드 시점 월드공간으로 변환해 이동한 뒤 다시 로컬로 되돌린다.
+        const mm = this.meshMats.get(v.mesh)!;
         tmp.set(attr.getX(v.index), attr.getY(v.index), attr.getZ(v.index));
-        v.mesh.localToWorld(tmp);
+        tmp.applyMatrix4(mm.mat);
         tmp[r.axis.key] += move;
-        v.mesh.worldToLocal(tmp);
+        tmp.applyMatrix4(mm.inv);
         attr.setXYZ(v.index, tmp.x, tmp.y, tmp.z);
         dirtyGeoms.add(v.mesh);
       }
       for (const h of r.hotspots) {
-        h.getWorldPosition(tmp);
+        tmp.copy(h.node.position).applyMatrix4(h.parentMat);
         tmp[r.axis.key] += move;
-        if (h.parent) h.parent.worldToLocal(tmp);
-        h.position.copy(tmp);
+        tmp.applyMatrix4(h.parentInv);
+        h.node.position.copy(tmp);
       }
     }
 
@@ -180,11 +208,17 @@ interface VertRef {
   index: number;
 }
 
+interface HotspotRef {
+  node: Object3D;
+  parentMat: Matrix4;
+  parentInv: Matrix4;
+}
+
 interface ScaleRegion {
   axis: Axis;
   sign: number;
   verts: VertRef[];
-  hotspots: Object3D[];
+  hotspots: HotspotRef[];
   shareDivisor: number;
 }
 

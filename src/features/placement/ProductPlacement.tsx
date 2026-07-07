@@ -163,7 +163,10 @@ function FittedModel({ url, p, sel, ghost = false }: { url: string; p: PlacedPro
   // 멈춤을 제거. 컴파일 끝날 때까지 모델은 숨기고 파란 고스트 박스만 표시(즉시 피드백).
   // 이후 실제 배치는 프로그램/텍스처 캐시를 재사용하므로 빠르다.
   const [compiled, setCompiled] = useState(!ghost);
-  const { obj, scale, pos, dpTypes, doorSlots, selSize, bodyCx, bodyCz, bodyMinY, drawers } = useMemo(() => {
+  // ⭐ 무거운 1회성 빌드 — clone/재질 변환/HelperScaler 구성은 GLB(scene)당 한 번만.
+  //   치수 변경은 아래 useMemo에서 scaler.applyResize(차분)만 재호출 → 리사이즈 드래그가
+  //   매 프레임 모델 통째 재생성하던 버벅임 제거.
+  const built = useMemo(() => {
     // 노드 트리만 clone — geometry 는 useGLTF 캐시와 **참조 공유**(Object3D.clone 기본 동작).
     // 정점을 실제로 변형할 메시만 아래에서 선별 복제한다. (전 메시 geometry.clone() 이
     // 배치 순간 수백 ms 멈춤의 주범이었다.)
@@ -199,10 +202,18 @@ function FittedModel({ url, p, sel, ghost = false }: { url: string; p: PlacedPro
       // eslint-disable-next-line no-console
       console.log('[FittedModel] regionCount=', scaler.regionCount, 'useHelper=', useHelper, 'meshes=', names, scaler.getDiagnostics());
     }
+    // 몸통 DP 타입(모델에 보존된 DP 노드) — 도어 매칭용. 없으면 [] (도어/일반 상품).
+    const dpTypes = readDpTypes(clone);
+    return { clone, scaler, useHelper, dpTypes };
+  }, [scene]);
+
+  const { obj, scale, pos, dpTypes, doorSlots, selSize, bodyCx, bodyCz, bodyMinY, drawers } = useMemo(() => {
+    const { clone, scaler, useHelper, dpTypes } = built;
     // 크기 정책: 몸통(변형 대상 메시)을 입력 치수(p.w/h/d)에 맞춰 helper 영역 기준 스트레치.
     // (GLB는 변환 시 mm→m 정규화 → origSize도 미터이므로 delta가 정상 범위. replaceableW
     //  구성품은 isTransformable에서 제외되어 고정 크기 유지된다.)
     // 목표 치수(m, y-up): x=폭(w), y=높이(h), z=깊이(d)
+    // applyResize는 마지막 목표에서의 **차분만** 적용 — 같은 clone으로 연속 리사이즈 가능.
     if (useHelper) scaler.applyResize(new Vector3(p.w * M, p.h * M, p.d * M));
 
     // replaceable 구성품: 입력 폭(p.w)과 같은(또는 구간) 사이즈 명칭만 노출.
@@ -228,8 +239,6 @@ function FittedModel({ url, p, sel, ghost = false }: { url: string; p: PlacedPro
       }
     });
 
-    // 몸통 DP 타입(모델에 보존된 DP 노드) — 도어 매칭용. 없으면 [] (도어/일반 상품).
-    const dpTypes = readDpTypes(clone);
     // 도어 슬롯 — 몸통 hotspot의 DL/DR(+짝 마커)로 개수·사이즈·위치 계산.
     // applyResize 이후의 clone이므로 마커도 함께 변형되어 스트레치된 몸통에 맞는 도어 크기가 나온다.
     const doorSlots = readDoorSlots(clone);
@@ -270,7 +279,10 @@ function FittedModel({ url, p, sel, ghost = false }: { url: string; p: PlacedPro
       parent.getWorldScale(_s);
       const sUniform = (Math.abs(_s.x) + Math.abs(_s.y) + Math.abs(_s.z)) / 3 || 1;
       const offsetLocal = (DRAWER_OPEN_RATIO * (depth || 0.3)) / sUniform;
-      drawers.push({ node: o, basePos: o.position.clone(), dir, offset: offsetLocal, y: cy });
+      // clone이 재사용되므로(치수 변경 시 재계산) 원위치는 최초 1회만 캡처 — 서랍이 열려 있는
+      // 중에 재계산돼도 열림 오프셋이 원위치로 굳지 않게.
+      const bp = (o.userData.__basePos ??= o.position.clone()) as Vector3;
+      drawers.push({ node: o, basePos: bp.clone(), dir, offset: offsetLocal, y: cy });
     });
     drawers.sort((a, b) => a.y - b.y); // 아래부터 1번
 
@@ -317,7 +329,7 @@ function FittedModel({ url, p, sel, ghost = false }: { url: string; p: PlacedPro
       bodyCx: center.x * sx, bodyCz: center.z * sz, bodyMinY: box.min.y * sy,
       drawers,
     };
-  }, [scene, p.w, p.d, p.h, p.lift]);
+  }, [built, p.w, p.d, p.h, p.lift, p.slotPos]);
 
   // ghost 모델 비동기 선컴파일 (KHR_parallel_shader_compile 활용). 실패해도 그냥 표시.
   useEffect(() => {
