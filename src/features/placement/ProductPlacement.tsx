@@ -1065,6 +1065,8 @@ function ProductResizeHandles({ id }: { id: string }) {
       if (rr.gap > 0) next = rr.min + Math.round((next - rr.min) / rr.gap) * rr.gap;
       // ⭐ 리사이즈 스냅 — 드래그 중인 면이 인접 상품의 면과 SNAP_DIST 안이면 딱 맞춰
       //   줄어들거나 늘어난다 (축 정렬 상태에서만, gap 스텝보다 우선).
+      //   리사이즈는 **반대 면 고정**이므로, 고정면 기준으로 실제 드래그 면 위치를 계산해야
+      //   장에 닿는 시점에 정확히 스냅된다 (중심 고정 가정은 절반 어긋남).
       if (d0.axis !== 'h') {
         const ax = dir.x, az = dir.z;
         const axisIsX = Math.abs(ax) > 0.9, axisIsZ = Math.abs(az) > 0.9;
@@ -1074,7 +1076,8 @@ function ProductResizeHandles({ id }: { id: string }) {
           if (me) {
             const a = axisIsX ? d0.baseX : d0.baseZ;           // 축 위 기준 중심 좌표(m)
             const sgn = axisIsX ? Math.sign(ax) : Math.sign(az); // 드래그 면의 축 방향 부호
-            const faceCoord = a + sgn * (next / 2) * M;          // 현재 면 위치(m)
+            const fixedFace = a - sgn * (base / 2) * M;          // 반대(고정) 면 — 드래그 동안 불변
+            const faceCoord = fixedFace + sgn * next * M;        // 드래그 중인 면의 실제 위치(m)
             const myF = footprintXZ({ ...me, x: d0.baseX, z: d0.baseZ, [d0.axis]: next } as PlacedProduct);
             for (const o of st0.placed) {
               if (o.id === id || o.parentId) continue;
@@ -1087,11 +1090,29 @@ function ProductResizeHandles({ id }: { id: string }) {
               const cands = axisIsX ? [of.minx, of.maxx] : [of.minz, of.maxz];
               for (const c of cands) {
                 if (Math.abs(faceCoord - c) < SNAP_DIST) {
-                  const snapped = Math.round(((c - a) / (sgn * M)) * 2);
+                  const snapped = Math.round(((c - fixedFace) * sgn) / M); // 드래그 면이 c에 딱 닿는 치수
                   if (snapped >= rr.min && snapped <= rr.max) next = snapped;
                 }
               }
             }
+          }
+        }
+      } else {
+        // ⭐ H 면 스냅 — 발자국이 근접/접촉한 상품의 **윗면 높이**에 맞춤 (EP/서라운딩을 장 높이에)
+        const st0 = usePlacedProductStore.getState();
+        const me = st0.placed.find((x) => x.id === id);
+        if (me) {
+          const myF = footprintXZ(me);
+          const myLift = me.lift ?? 0;
+          for (const o of st0.placed) {
+            if (o.id === id || o.parentId) continue;
+            const of = footprintXZ(o);
+            const ox = Math.min(myF.maxx, of.maxx) - Math.max(myF.minx, of.minx);
+            const oz = Math.min(myF.maxz, of.maxz) - Math.max(myF.minz, of.minz);
+            if (ox < -SNAP_DIST || oz < -SNAP_DIST) continue; // 인접(근접/접촉)만
+            const topMm = (o.lift ?? 0) + o.h; // 상대 윗면 높이(mm)
+            const cand = Math.round(topMm - myLift);
+            if (Math.abs(myLift + next - topMm) < SNAP_DIST * 1000 && cand >= rr.min && cand <= rr.max) next = cand;
           }
         }
       }
