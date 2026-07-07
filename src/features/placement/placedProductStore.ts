@@ -16,14 +16,11 @@ export interface PendingProduct {
   modelUrl?: string; // 실제 GLB/GLTF 모델 URL (있으면 박스 대신 모델 로드)
   /** 표시 컬러(hex) — 어드민 모델(마감) 라인 구분색. 박스 렌더 시 이 색으로 표시 */
   color?: string;
-  /**
-   * 축별 가변 사이즈 범위(mm) — 있으면 그 축은 리사이즈 핸들로 길이 변경 가능.
-   * options가 있으면(형제 선택값·규격 GAP 단계) 드래그는 **그 값들에만 스냅**된다 — 룰 우선.
-   */
+  /** 축별 가변 사이즈 범위(mm) — 있으면 그 축은 리사이즈 핸들로 길이 변경 가능. */
   sizeRange?: {
-    w?: { min: number; max: number; gap: number; options?: number[] };
-    d?: { min: number; max: number; gap: number; options?: number[] };
-    h?: { min: number; max: number; gap: number; options?: number[] };
+    w?: { min: number; max: number; gap: number };
+    d?: { min: number; max: number; gap: number };
+    h?: { min: number; max: number; gap: number };
   };
   /** 도어 등 부속이 부착된 몸통(베이스)의 placed id. 몸통 크기 변경 시 자동 갱신 대상 판별용. */
   parentId?: string;

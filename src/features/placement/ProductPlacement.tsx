@@ -1046,16 +1046,10 @@ function ProductResizeHandles({ id }: { id: string }) {
       const base = d0.axis === 'w' ? d0.baseW : d0.axis === 'd' ? d0.baseD : d0.baseH;
       let next = base + deltaMm;
       next = Math.max(rr.min, Math.min(rr.max, next));
-      // ⭐ 선택값/룰 우선 — options(형제 사이즈·규격 단계)가 있으면 그 값들에만 스냅.
-      //   인접 면 스냅도 룰 밖의 값을 만들 수 있으므로 건너뛴다.
-      const ruled = !!(rr.options && rr.options.length);
-      if (ruled) {
-        next = rr.options!.reduce((a, b) => (Math.abs(b - next) < Math.abs(a - next) ? b : a));
-      }
-      if (!ruled && rr.gap > 0) next = rr.min + Math.round((next - rr.min) / rr.gap) * rr.gap;
+      if (rr.gap > 0) next = rr.min + Math.round((next - rr.min) / rr.gap) * rr.gap;
       // ⭐ 리사이즈 스냅 — 드래그 중인 면이 인접 상품의 면과 SNAP_DIST 안이면 딱 맞춰
       //   줄어들거나 늘어난다 (축 정렬 상태에서만, gap 스텝보다 우선).
-      if (!ruled && d0.axis !== 'h') {
+      if (d0.axis !== 'h') {
         const ax = dir.x, az = dir.z;
         const axisIsX = Math.abs(ax) > 0.9, axisIsZ = Math.abs(az) > 0.9;
         if (axisIsX || axisIsZ) {
