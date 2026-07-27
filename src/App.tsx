@@ -26,6 +26,7 @@ import { SceneLightProbe } from '@/engine/lighting/SceneLightProbe';
 import { ReflectionProbe } from '@/engine/lighting/ReflectionProbe';
 import { IrradianceProbeGrid } from '@/engine/lighting/IrradianceProbeGrid';
 import { ImportedModels } from '@/features/models/ImportedModels';
+import { registerOrbitControls } from '@/features/models/gizmoGuard';
 import { DynamicSky } from '@/engine/lighting/DynamicSky';
 import { PathtracerRenderer } from '@/engine/pathtracer/PathtracerRenderer';
 import { CustomLights } from '@/engine/lighting/CustomLights';
@@ -425,8 +426,17 @@ function OrbitControlsConditional() {
   // 움직여 path tracer 가 그동안 계속 reset → "정지 즉시 수렴" 이 안 됨. damping 끄면
   // 놓는 순간 카메라 정지 → 즉시 누적 시작.
   const ptEnabled = useLightingStore((s) => s.pathtracerEnabled);
+  // 기즈모 드래그 도중 언마운트로 카메라 회전이 영구 정지하는 버그 방지 — OrbitControls 인스턴스를
+  // gizmoGuard 에 등록해 두고, 기즈모 언마운트 가드(GizmoOrbitGuard)가 enabled 를 복구할 수 있게 한다.
+  // ref 콜백으로 정확히 mount 시 등록 / unmount 시 해제(no-deps effect 는 인스턴스가 뒤섞임).
+  const orbitReg = useRef<(() => void) | null>(null);
   return (
     <OrbitControls
+      ref={(o) => {
+        orbitReg.current?.();
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        orbitReg.current = o ? registerOrbitControls(o as any) : null;
+      }}
       // viewMode / ptEnabled 변경 시 remount
       key={`${viewMode}-${ptEnabled ? 'pt' : 'raster'}`}
       makeDefault

@@ -25,6 +25,7 @@ import {
 import { TeapotGeometry } from 'three/examples/jsm/geometries/TeapotGeometry.js';
 import { useGLTF, TransformControls } from '@react-three/drei';
 import { registerGizmo, isGizmoBusy } from './gizmoGuard';
+import { GizmoOrbitGuard } from './GizmoOrbitGuard';
 import { clearOtherSelections } from '@/features/selection/clearSelections';
 import { clone as cloneSkeleton } from 'three/examples/jsm/utils/SkeletonUtils.js';
 import { standardToPhysical } from '@/domain/materials/standardToPhysical';
@@ -273,6 +274,9 @@ function ModelBody({ model, obj: rawObj }: { model: ImportedModel; obj: Object3D
       </group>
 
       {selected && groupRef.current && (
+        <>
+        {/* 기즈모 드래그 도중 언마운트 시 카메라 회전 영구 정지 방지 — orbit 재활성 보장 */}
+        <GizmoOrbitGuard />
         <TransformControls
           // 기즈모 가드 등록 — 핸들 호버/드래그 중엔 뒤 메시가 선택을 뺏지 못하게
           ref={(tc) => {
@@ -286,6 +290,7 @@ function ModelBody({ model, obj: rawObj }: { model: ImportedModel; obj: Object3D
           onMouseUp={commitTransform}
           onObjectChange={commitTransform}
         />
+        </>
       )}
     </>
   );

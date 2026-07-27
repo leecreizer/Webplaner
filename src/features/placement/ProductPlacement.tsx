@@ -5,6 +5,7 @@ import { useFrame, useThree } from '@react-three/fiber';
 import type { ThreeEvent } from '@react-three/fiber';
 import { requestShadowUpdate } from '@/engine/lighting/ShadowDemand';
 import { registerGizmo, isGizmoBusy } from '@/features/models/gizmoGuard';
+import { GizmoOrbitGuard } from '@/features/models/GizmoOrbitGuard';
 import { clearOtherSelections } from '@/features/selection/clearSelections';
 import { Edges, Html, TransformControls, useGLTF } from '@react-three/drei';
 import { HelperScaler, isHelperRegionName, replaceableSizeOf, pickReplaceableSize } from '@/domain/products/HelperScaler';
@@ -131,6 +132,13 @@ function computeDoorClamp(placed: PlacedProduct[], openDeg: number): Map<string,
   clamp.forEach((r, id) => deg.set(id, (r * 180) / Math.PI));
   return deg;
 }
+/**
+ * 몸통 이동 중 실시간 도어 충돌 클램프 — 라이브 그룹 위치로 매 프레임 갱신(도어 열림 중).
+ * 드래그는 store 를 거치지 않고 3D 그룹을 직접 옮기므로 memo(doorClamp)만으론 "놓을 때"까지
+ * 인접 도어 겹침이 반영되지 않는다. 이 맵이 있으면 도어 열림각을 이 값으로 실시간 반영한다.
+ * (null 이면 정적 memo prop 사용)
+ */
+let LIVE_DOOR_DEG: Map<string, number> | null = null;
 /** 서랍 돌출량 = 깊이 × 이 비율. 2/3면 뒤 1/3이 남아 몸통을 벗어나지 않음. */
 const DRAWER_OPEN_RATIO = 2 / 3;
 
@@ -527,11 +535,14 @@ const PlacedItem = memo(function PlacedItem({ p, sel, onDown, doorsOpen, doorOpe
   // 힌지 = 도어 바깥 변. L 도어는 왼쪽(-w/2), R 도어는 오른쪽(+w/2). 그 변을 축으로 회전.
   const halfW = (p.w * M) / 2;
   const hingeX = p.slotPos === 'R' ? halfW : -halfW;
-  // 열림 방향: 자유 변(안쪽)이 앞(+z)으로 swing하도록 L=음수 / R=양수. 각도는 store에서 조절(doorOpenDeg).
-  const openTarget = (p.slotPos === 'R' ? 1 : -1) * (doorOpenDeg * Math.PI) / 180;
+  // 열림 방향: 자유 변(안쪽)이 앞(+z)으로 swing하도록 L=음수 / R=양수.
+  const openDir = p.slotPos === 'R' ? 1 : -1;
 
   useFrame((_, dt) => {
     if (!isDoor || !hingeRef.current) return;
+    // 몸통 이동 중이면 실시간 충돌 클램프(LIVE_DOOR_DEG)를, 아니면 정적 prop(doorOpenDeg)을 사용.
+    const deg = LIVE_DOOR_DEG?.get(p.id) ?? doorOpenDeg;
+    const openTarget = openDir * (deg * Math.PI) / 180;
     const target = doorsOpen ? openTarget : 0;
     const a = angleRef.current + (target - angleRef.current) * Math.min(1, dt * 6); // 부드럽게 수렴
     if (angleRef.current !== a) requestShadowUpdate(); // 도어 회전 중 섀도맵 갱신
@@ -624,6 +635,19 @@ export function ProductPlacement() {
   const selectedSet = new Set(selectedIds);
   // 도어별 최대 열림 각(충돌 시 교차 직전까지). 배치/각도 변경 시 재계산.
   const doorClamp = useMemo(() => computeDoorClamp(placed, doorOpenDeg), [placed, doorOpenDeg]);
+
+  // ⭐ 몸통 이동 중 인접 도어 겹침 **실시간** 반영 — 드래그는 store 를 거치지 않고 그룹을 직접
+  //   옮기므로 memo(doorClamp)만으론 놓을 때까지 갱신 안 됨. 도어 열림 중엔 매 프레임 라이브
+  //   그룹 위치로 충돌 클램프를 재계산해 LIVE_DOOR_DEG 에 실어 도어 애니메이션이 즉시 반영하게 한다.
+  useFrame(() => {
+    const st = usePlacedProductStore.getState();
+    if (!st.doorsOpen) { LIVE_DOOR_DEG = null; return; }
+    const live = st.placed.map((pp) => {
+      const g = placedGroupRefs.get(pp.id);
+      return g ? { ...pp, x: g.position.x, z: g.position.z, ry: (g.rotation.y * 180) / Math.PI } : pp;
+    });
+    LIVE_DOOR_DEG = computeDoorClamp(live, st.doorOpenDeg);
+  });
 
   // 선택이 바뀌면 피벗을 선택 박스들의 중심으로 재배치 (회전 0)
   useEffect(() => {
@@ -820,7 +844,11 @@ export function ProductPlacement() {
       {/* 선택 중심 피벗 + 기즈모 — 다중 선택 시 전체 이동/회전 (G=이동, R=회전) */}
       <object3D ref={setPivotObj} />
       {selectedIds.length > 0 && pivotObj && (
-        (() => {
+        <>
+        {/* 기즈모 드래그 도중 언마운트되면 OrbitControls.enabled 가 false 로 고정돼 카메라 회전이
+            영구 정지한다(drei/three-stdlib 버그). 기즈모와 함께 렌더해 언마운트 시 orbit 을 되살린다. */}
+        <GizmoOrbitGuard />
+        {(() => {
           // 단일 선택: 기즈모를 상품 그룹에 직접 부착 — 드래그 즉시 모델이 움직이고
           // (프록시 델타 방식의 한 박자 지연·최종 위치 불일치 해소), 놓을 때 store 커밋.
           const singleGroup = selectedIds.length === 1 ? placedGroupRefs.get(selectedIds[0]) : null;
@@ -856,19 +884,28 @@ export function ProductPlacement() {
                   if (!b) return;
                   const followerIds = new Set(fw?.followers.map((x) => x.f.id) ?? []);
                   if (gizmoMode === 'translate') {
-                    const f = footprintXZ({ ...b, x: singleGroup.position.x, z: singleGroup.position.z });
-                    // 자기 자식(follower)에 스냅/올라타는 자가참조 방지
-                    const others = st.placed.filter((pp) => pp.id !== id && !pp.parentId && !followerIds.has(pp.id));
-                    // ⭐ 스태킹: 다른 상품 발자국과 겹치면 그 **메시 윗면을 따라** 올라타며 이동.
-                    //   겹침 없으면 기존 모서리 스냅 + 바닥 높이 복귀.
-                    const surfY = stackSurfaceY(id, f, others);
-                    if (surfY !== null) {
-                      singleGroup.position.y = surfY - (b.lift ?? 0) * M; // 시각 보정(자식이 base lift 포함)
+                    // 세로(Y) 축 드래그 = 배치 높이(lift) 조절. 바닥/스태킹 스냅으로 덮어쓰면
+                    // 위로 이동이 먹지 않으므로(요청: "위로 축이동이 안돼"), Y 드래그는 기즈모가
+                    // 옮긴 position.y 를 그대로 두고 바닥 아래로만 못 내려가게 클램프한다(총 lift ≥ 0).
+                    const axis = (tcRef.current as { axis?: string | null } | null)?.axis ?? null;
+                    if (axis === 'Y') {
+                      const floorY = -(b.lift ?? 0) * M;
+                      if (singleGroup.position.y < floorY) singleGroup.position.y = floorY;
                     } else {
-                      singleGroup.position.y = 0;
-                      const sn = others.length ? computeSnap(f, others) : { dx: 0, dz: 0 };
-                      singleGroup.position.x += sn.dx;
-                      singleGroup.position.z += sn.dz;
+                      const f = footprintXZ({ ...b, x: singleGroup.position.x, z: singleGroup.position.z });
+                      // 자기 자식(follower)에 스냅/올라타는 자가참조 방지
+                      const others = st.placed.filter((pp) => pp.id !== id && !pp.parentId && !followerIds.has(pp.id));
+                      // ⭐ 스태킹: 다른 상품 발자국과 겹치면 그 **메시 윗면을 따라** 올라타며 이동.
+                      //   겹침 없으면 기존 모서리 스냅 + 바닥 높이 복귀.
+                      const surfY = stackSurfaceY(id, f, others);
+                      if (surfY !== null) {
+                        singleGroup.position.y = surfY - (b.lift ?? 0) * M; // 시각 보정(자식이 base lift 포함)
+                      } else {
+                        singleGroup.position.y = 0;
+                        const sn = others.length ? computeSnap(f, others) : { dx: 0, dz: 0 };
+                        singleGroup.position.x += sn.dx;
+                        singleGroup.position.z += sn.dz;
+                      }
                     }
                   }
                   // follower 들도 몸통 델타만큼 실시간 추종 (이동 + 몸통 중심 기준 회전)
@@ -940,7 +977,8 @@ export function ProductPlacement() {
               onObjectChange={onPivotChange}
             />
           );
-        })()
+        })()}
+        </>
       )}
 
       {/* 가변 사이즈 리사이즈 핸들 — 단일 선택 + sizeRange 있는 축만 화살표 표시 */}
