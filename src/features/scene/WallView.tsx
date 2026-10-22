@@ -8,6 +8,7 @@ import { Brush, Evaluator, SUBTRACTION, ADDITION } from 'three-bvh-csg';
 import { Wall } from '@/domain/structures/Wall';
 import { polyGeometryExtruded } from '@/engine/mesh/MeshGenerator';
 import { useViewStore } from '@/engine/stores/viewStore';
+import { useLightingStore } from '@/engine/stores/lightingStore';
 import { isModuleWall, wallSourceModules, setModuleDragging } from '@/features/spaceModules/syncModuleWalls';
 import { findModuleSideForWall, resizeModuleEdge } from '@/features/spaceModules/moduleResize';
 import { clearOtherSelections } from '@/features/selection/clearSelections';
@@ -21,6 +22,7 @@ import { alignSnap, type DragGuide } from '@/features/drawing/snapHelpers';
 import { DragGuideLines } from '@/features/drawing/DragGuideLines';
 import { useMeshSelectionStore, meshKey } from '@/features/selection/meshSelectionStore';
 import { useVisibilityStore } from '@/features/scene/visibilityStore';
+import { isGizmoBusy } from '@/features/models/gizmoGuard';
 
 const _csgEval = new Evaluator();
 
@@ -74,6 +76,10 @@ export function WallView({ wall, color = '#cccccc' }: { wall: Wall; color?: stri
     return () => window.removeEventListener('keydown', onKey);
   }, [wall]);
 
+  // wall.direction 은 접근마다 새 Vector3 라 deps 로 쓰면 렌더마다(hover 등) 재계산되고,
+  // 아래 geometry(CSG 포함)까지 매번 새로 만든다 → 시작점·방향을 숫자 값으로 비교.
+  const sp = wall.startNode?.position;
+  const wd = wall.direction;
   const { position, quaternion } = useMemo(() => {
     if (!wall.startNode) return { position: new Vector3(), quaternion: new Quaternion() };
     const pos = wall.startNode.position.clone();
@@ -81,7 +87,8 @@ export function WallView({ wall, color = '#cccccc' }: { wall: Wall; color?: stri
     const dir = wall.direction.lengthSq() > 0 ? wall.direction : new Vector3(0, 0, 1);
     const q = new Quaternion().setFromUnitVectors(new Vector3(0, 0, 1), dir);
     return { position: pos, quaternion: q };
-  }, [wall.startNode, wall.direction, effectiveHeight]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [wall.startNode, sp?.x, sp?.y, sp?.z, wd.x, wd.y, wd.z, effectiveHeight]);
 
   const geometry = useMemo(() => {
     if (wall.isVirtual || wall.border.length < 4) return null;
@@ -156,12 +163,15 @@ export function WallView({ wall, color = '#cccccc' }: { wall: Wall; color?: stri
   const selectMesh = useMeshSelectionStore((s) => s.selectMesh);
   const meshSelected = useMeshSelectionStore((s) => s.selectedMeshKeys.includes(myMeshKey));
   const visible = useVisibilityStore((s) => !s.hidden[myMeshKey]);
+  // 경로 추적 모드에선 선택해도 벽 색을 바꾸지 않는다 — 재질이 바뀌면 경로 추적이 처음부터 다시 쌓는다.
+  // 선택은 시안 테두리 선(아래)으로 보인다
+  const mutracer = useLightingStore((s) => s.giMode === 'mutracer');
 
   if (geometry === null || !visible) return null;
 
   const wallColor = dragging
     ? '#ff5722'
-    : isSelected
+    : isSelected && !mutracer
       ? '#00bcd4'
       : hovered
         ? '#ffc107'
@@ -173,6 +183,8 @@ export function WallView({ wall, color = '#cccccc' }: { wall: Wall; color?: stri
     if (drawingEnabled || !wall.startNode || !wall.endNode) return;
     // 좌클릭(button=0)만 선택/드래그 — 우클릭/가운데 버튼은 카메라 조작에 양보
     if (e.button !== 0) return;
+    // 기즈모 핸들 조작 중이면 선택 가로채기 금지 (핸들 뒤 메시 오선택 방지)
+    if (isGizmoBusy()) return;
     e.stopPropagation();
     // 3D 모드 — 클릭만 = 선택 (편집은 비활성). Shift+클릭 = 다중 추가/제거.
     if (!is2D) {

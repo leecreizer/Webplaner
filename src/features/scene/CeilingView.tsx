@@ -6,6 +6,7 @@ import { Brush, Evaluator, SUBTRACTION, ADDITION } from 'three-bvh-csg';
 import { Space } from '@/domain/structures/Space';
 import { polyGeometry, polyGeometryExtruded } from '@/engine/mesh/MeshGenerator';
 import { useEditStore } from '@/features/editing/editStore';
+import { isGizmoBusy } from '@/features/models/gizmoGuard';
 
 const _csgEval = new Evaluator();
 
@@ -86,6 +87,8 @@ export function CeilingView({
         userData={{ editKind: 'ceiling', editOwnerId: space.spaceIndex }}
         onPointerDown={(e) => {
           if (e.button !== 0) return;
+          // 기즈모 핸들 조작 중이면 선택 가로채기 금지 (핸들 뒤 메시 오선택 방지)
+          if (isGizmoBusy()) return;
           e.stopPropagation();
           selectMesh(myKey, e.shiftKey);
         }}

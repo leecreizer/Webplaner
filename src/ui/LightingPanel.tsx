@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import {
   useLightingStore,
   type EnvironmentPreset,
@@ -6,6 +6,9 @@ import {
   type ToneMappingMode,
 } from '@/engine/stores/lightingStore';
 import { useViewStore } from '@/engine/stores/viewStore';
+import { useMutracerStore } from '@/engine/stores/mutracerStore';
+import { NumberField } from '@/ui/NumberField';
+import { lightRotation } from '@/engine/lighting/CustomLights';
 import { useCustomLightStore, type LightKind, type CustomLight } from '@/engine/stores/customLightStore';
 import { DraggablePanel } from '@/ui/panels/DraggablePanel';
 
@@ -29,7 +32,7 @@ const ENV_PRESETS: EnvironmentPreset[] = [
   'warehouse',
 ];
 const SHADOW_QUALITIES: ShadowQuality[] = ['low', 'medium', 'high', 'ultra'];
-const GI_MODES = ['hemisphere', 'single-probe', 'probe-grid', 'path-tracer'] as const;
+const GI_MODES = ['hemisphere', 'single-probe', 'probe-grid', 'path-tracer', 'mutracer'] as const;
 const TONE_MAPPING_OPTIONS: ToneMappingMode[] = ['none', 'linear', 'reinhard', 'cineon', 'aces', 'agx'];
 
 /**
@@ -69,7 +72,8 @@ export function LightingPanel() {
             <Slider label="방위각" unit="°" min={-180} max={180} step={1} value={s.azimuth} onChange={s.setAzimuth} />
             <Slider label="고도" unit="°" min={0} max={90} step={1} value={s.elevation} onChange={s.setElevation} />
             <Slider label="거리" unit="m" min={5} max={50} step={0.5} value={s.distance} onChange={s.setDistance} />
-            <Slider label="태양 강도" min={0} max={5} step={0.05} value={s.intensity} onChange={s.setIntensity} />
+            <Slider label="태양 강도" min={0} max={20} step={0.05} value={s.intensity} onChange={s.setIntensity} />
+            <ColorRow label="태양 색" value={s.sunColor} onChange={s.setSunColor} />
             <Slider label="환경광" min={0} max={2} step={0.05} value={s.ambientIntensity} onChange={s.setAmbientIntensity} />
             <Checkbox label="기즈모로 빛 위치 조작" checked={s.showLightGizmo} onChange={s.setShowLightGizmo} />
             {s.showLightGizmo && (
@@ -86,6 +90,10 @@ export function LightingPanel() {
             <ColorRow label="배경 색" value={v.sceneBackgroundColor} onChange={v.setSceneBackgroundColor} />
           </Section>
 
+          <Section title="성능 확인">
+            <Checkbox label="프레임 체크 (` 키)" checked={v.showFrameMeter} onChange={v.setShowFrameMeter} />
+          </Section>
+
           <Section title="그리드">
             <Checkbox label="그리드 표시" checked={v.showGrid} onChange={v.setShowGrid} />
             <ColorRow label="셀 컬러" value={v.gridCellColor} onChange={v.setGridCellColor} />
@@ -94,11 +102,13 @@ export function LightingPanel() {
           </Section>
 
           <Section title="그림자">
+            {s.giMode === 'mutracer' && <MtNote text="래스터 그림자 설정 — 경로 추적은 그림자를 빛에서 직접 계산해 적용되지 않는다(해·조명 세기·방향은 적용)" />}
             <Checkbox label="그림자 캐스팅" checked={s.castShadow} onChange={s.setCastShadow} />
             <Select label="품질" value={s.shadowQuality} options={SHADOW_QUALITIES} onChange={s.setShadowQuality} />
             <Slider label="소프트니스" min={0} max={30} step={1} value={s.shadowSoftness} onChange={s.setShadowSoftness} />
             <Slider label="그림자 강도" min={0} max={1.2} step={0.05} value={s.shadowStrength} onChange={s.setShadowStrength} />
             <ColorRow label="그림자 색" value={s.shadowColor} onChange={s.setShadowColor} />
+            <CausticControls />
           </Section>
 
           <Section title="GI (Global Illumination)">
@@ -118,6 +128,7 @@ export function LightingPanel() {
                 }
               }}
             />
+            {s.giMode === 'mutracer' && <MtNote text="GI 강도·하늘/땅 색은 래스터용 — 경로 추적은 간접광을 직접 계산한다" />}
             <Slider label="GI 강도" min={0} max={2} step={0.05} value={s.giIntensity} onChange={s.setGiIntensity} />
             <ColorRow label="Sky 색 (위)" value={s.giSkyColor} onChange={s.setGiSkyColor} />
             <ColorRow label="Ground 색 (아래)" value={s.giGroundColor} onChange={s.setGiGroundColor} />
@@ -191,8 +202,11 @@ export function LightingPanel() {
           <Section title="Environment (HDR/IBL)">
             <Select label="Preset" value={s.environmentPreset} options={ENV_PRESETS} onChange={s.setEnvironmentPreset} />
             <Checkbox label="HDR 배경 표시" checked={s.environmentBackground} onChange={s.setEnvironmentBackground} />
+            {s.giMode === 'mutracer' && <MtNote text="경로 추적은 환경맵 세기를 읽지 않는다(그림·배경은 적용)" />}
             <Slider label="강도" min={0} max={3} step={0.05} value={s.environmentIntensity} onChange={s.setEnvironmentIntensity} />
           </Section>
+
+          {s.giMode === 'mutracer' && <MutracerSection />}
 
           <Section title="Tone Mapping">
             <Select label="모드" value={s.toneMapping} options={TONE_MAPPING_OPTIONS} onChange={s.setToneMapping} />
@@ -202,6 +216,7 @@ export function LightingPanel() {
           <CustomLightSection />
 
           <Section title="PostFX">
+            {s.giMode === 'mutracer' && <MtNote text="래스터 후처리 — 경로 추적 화면의 블룸·비네팅·대비는 「경로 추적 (WebGPU)」 표시 항목에서" />}
             <Checkbox label="안티알리아싱 (SMAA)" checked={s.smaaEnabled} onChange={s.setSmaaEnabled} />
             <Checkbox label="SSR — 실시간 반사 (모델↔모델·환경)" checked={s.ssrEnabled} onChange={s.setSsrEnabled} />
             {s.ssrEnabled && (
@@ -367,10 +382,160 @@ function CustomLightEditor({
         <ColorRow label="Ground 색" value={l.groundColor ?? '#404040'} onChange={(v) => onChange({ groundColor: v })} />
       )}
 
-      {(l.kind === 'point' || l.kind === 'spot') && (
-        <Checkbox label="그림자" checked={l.castShadow ?? false} onChange={(v) => onChange({ castShadow: v })} />
+      {/* 회전 — 모든 조명. 빛은 자기 -Z 쪽(사각 기본 아래, 스포트는 처음엔 목표 쪽) */}
+      {(['X', 'Y', 'Z'] as const).map((axis, i) => {
+        const rot = lightRotation(l);
+        return (
+          <Slider
+            key={axis}
+            label={`회전 ${axis}`}
+            unit="°"
+            min={-180}
+            max={180}
+            step={1}
+            value={Math.round((rot[i] * 180) / Math.PI)}
+            onChange={(v) => {
+              const next = [...rot] as [number, number, number];
+              next[i] = (v * Math.PI) / 180;
+              onChange({ rotation: next });
+            }}
+          />
+        );
+      })}
+      <div style={{ fontSize: 10.5, color: '#94a3b8', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}
+        title={l.kind === 'point' ? '점 조명은 모든 방향으로 빛을 내 회전해도 빛은 같다(값만 저장)' : '선택 후 R = 회전 손잡이 · G/T = 이동 손잡이'}>
+        {l.kind === 'point' ? '점 조명: 회전해도 빛은 같다(모든 방향)' : '선택 후 R = 회전 · G/T = 이동'}
+      </div>
+
+      {/* 그림자 — 조명마다 */}
+      {(l.kind === 'point' || l.kind === 'spot') ? (
+        <>
+          <Checkbox label="그림자 표시" checked={l.castShadow ?? false} onChange={(v) => onChange({ castShadow: v })} />
+          {(l.castShadow ?? false) && (
+            <>
+              <Slider label="그림자 강도" min={0} max={1} step={0.05} value={l.shadowIntensity ?? 1} onChange={(v) => onChange({ shadowIntensity: v })} />
+              <Slider label="그림자 부드럽기" min={0} max={30} step={0.5} value={l.shadowRadius ?? 4} onChange={(v) => onChange({ shadowRadius: v })} />
+            </>
+          )}
+        </>
+      ) : (
+        <div style={{ fontSize: 10.5, color: '#94a3b8', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}
+          title="three.js 래스터는 사각·반구 조명의 그림자를 만들지 못한다. 경로 추적 모드에선 모든 조명이 그림자를 만든다">
+          그림자: 래스터 미지원(경로 추적은 자동)
+        </div>
       )}
     </div>
+  );
+}
+
+/** 경로 추적 모드에서 적용되지 않는 래스터 설정 안내 한 줄 */
+function MtNote({ text }: { text: string }) {
+  return (
+    <div
+      title={`경로 추적 모드: ${text}`}
+      style={{ fontSize: 10.5, color: '#fbbf24', margin: '2px 0 6px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}
+    >
+      ⚠ 경로 추적에선 적용 안 됨 — {text}
+    </div>
+  );
+}
+
+/**
+ * 경로 추적(MuTracer · WebGPU) 설정 — mutracerStore. 실행 중 바로 반영(MutracerRenderer).
+ * 반사 횟수·렌더 해상도는 lightingStore 값을 같이 쓴다. 맨 아래는 실시간 진단(백엔드·아틀라스·추적 시간).
+ */
+function MutracerSection() {
+  const mt = useMutracerStore((x) => x.mt);
+  const setMt = useMutracerStore((x) => x.setMt);
+  const resetMt = useMutracerStore((x) => x.resetMt);
+  const l = useLightingStore();
+  const [diag, setDiag] = useState('');
+  useEffect(() => {
+    const id = window.setInterval(() => {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const m = (window as any).__mutracer;
+      if (!m) return setDiag('경로 추적 엔진 없음');
+      const g = m.engine.getDiagnostics?.() ?? {};
+      const at = g.textureAtlas;
+      const tr = g.gpuTraceTiming;
+      setDiag(
+        [
+          `백엔드 ${m.engine.backend ?? '…'} · ${g.adapterName ?? ''} · ${m.loop.status} · 샘플 ${m.loop.samples}/${mt.maxSamples}`,
+          `해상도 ${m.loop.final.width}×${m.loop.final.height}` + (tr ? ` · 한 샘플 추적 ${Math.round(tr.estimatedFullFrameTimeMs)}ms` : ''),
+          at ? `텍스처 ${at.textureCount}장 · 줄임 ${(at.scale * 100).toFixed(0)}% · ${(at.estimatedBytes / 1048576).toFixed(0)}MiB` : '',
+          g.lightSampling ? `발광 삼각형 ${g.lightSampling.emissiveTriangles.toLocaleString()}개` : '',
+        ]
+          .filter(Boolean)
+          .join('\n'),
+      );
+    }, 1000);
+    return () => window.clearInterval(id);
+  }, [mt.maxSamples]);
+  const sub = (t: string) => <div style={{ fontSize: 11, color: '#93c5fd', margin: '8px 0 2px', fontWeight: 600 }}>{t}</div>;
+  return (
+    <Section title="경로 추적 (WebGPU · MuTracer)">
+      {sub('샘플링')}
+      <Slider label="최대 샘플 수" min={16} max={4096} step={16} value={mt.maxSamples} onChange={(v) => setMt({ maxSamples: v })} />
+      <Slider label="반사 횟수" min={1} max={12} step={1} value={l.pathtracerBounces} onChange={l.setPathtracerBounces} />
+      <Select label="샘플 순서" value={mt.samplingPattern} options={['sobol', 'zsobol', 'random']} onChange={(v) => setMt({ samplingPattern: v as typeof mt.samplingPattern })} />
+      <Slider label="조명 후보 수(WebGPU)" min={1} max={16} step={1} value={mt.directLightCandidates} onChange={(v) => setMt({ directLightCandidates: v })} />
+      <Slider label="밝기 제한(0=끔)" min={0} max={50} step={0.5} value={mt.clamping} onChange={(v) => setMt({ clamping: v })} />
+      <Select label="반투명 처리" value={mt.alphaBlendStrategy} options={['stochastic', 'deterministic-source-over']} onChange={(v) => setMt({ alphaBlendStrategy: v as typeof mt.alphaBlendStrategy })} />
+      <Select label="분산 파장 수" value={String(mt.dispersionWavelengths)} options={['3', '1']} onChange={(v) => setMt({ dispersionWavelengths: Number(v) as 1 | 3 })} />
+      <Checkbox label="모서리 둥글게(베벨)" checked={mt.bevel} onChange={(v) => setMt({ bevel: v })} />
+      {mt.bevel && <Slider label="베벨 샘플" min={1} max={32} step={1} value={mt.bevelSamples} onChange={(v) => setMt({ bevelSamples: v })} />}
+
+      {sub('해상도·성능')}
+      <Slider label="렌더 해상도 (화면 ×)" min={1} max={2} step={0.05} value={l.mutracerRenderScale} onChange={l.setMutracerRenderScale} />
+      <Slider label="프레임당 GPU 시간" unit="ms" min={4} max={100} step={1} value={mt.timeBudgetMs} onChange={(v) => setMt({ timeBudgetMs: v })} />
+      <Checkbox label="프레임당 샘플 여러 개" checked={mt.multiSamplesPerFrame} onChange={(v) => setMt({ multiSamplesPerFrame: v })} />
+      <Slider label="텍스처 예산" unit="MiB" min={256} max={4096} step={128} value={mt.textureBudgetMiB} onChange={(v) => setMt({ textureBudgetMiB: v })} />
+      <Select label="가속 구조 만들기" value={mt.bvhBuilder} options={['builtin', 'tinybvh']} onChange={(v) => setMt({ bvhBuilder: v as typeof mt.bvhBuilder })} />
+      <Select label="가속 구조 형식" value={mt.bvhLayout} options={['bvh2', 'bvh4', 'bvh-gpu', 'cwbvh']} onChange={(v) => setMt({ bvhLayout: v as typeof mt.bvhLayout })} />
+
+      <Checkbox label="유리 굴절·커스틱 (느림)" checked={mt.glassRefraction} onChange={(v) => setMt({ glassRefraction: v })} />
+
+      {sub('디노이즈')}
+      <Select label="디노이저" value={mt.denoiser} options={['oidn', 'jnlm', 'none']} onChange={(v) => setMt({ denoiser: v as typeof mt.denoiser })} />
+      {mt.denoiser === 'oidn' && (
+        <Select label="OIDN 모델(WebGPU)" value={mt.oidnModel} options={['small', 'standard', 'cleanAuxLarge']} onChange={(v) => setMt({ oidnModel: v as typeof mt.oidnModel })} />
+      )}
+      {mt.denoiser !== 'none' && (
+        <Select label="정리 시점" value={mt.denoiseSchedule} options={['progressive', 'every-sample', 'converged']} onChange={(v) => setMt({ denoiseSchedule: v as typeof mt.denoiseSchedule })} />
+      )}
+
+      {sub('화면 표시 (경로 추적 화면)')}
+      <Slider label="대비" min={0.5} max={1.5} step={0.01} value={mt.contrast} onChange={(v) => setMt({ contrast: v })} />
+      <Slider label="채도" min={0} max={2} step={0.01} value={mt.saturation} onChange={(v) => setMt({ saturation: v })} />
+      <Slider label="색온도(차갑게 ↔ 따뜻하게)" min={-1} max={1} step={0.01} value={mt.temperature} onChange={(v) => setMt({ temperature: v })} />
+      <Slider label="틴트(초록 ↔ 자홍)" min={-1} max={1} step={0.01} value={mt.tint} onChange={(v) => setMt({ tint: v })} />
+      <Slider label="비네팅" min={0} max={1} step={0.01} value={mt.vignette} onChange={(v) => setMt({ vignette: v })} />
+      <Slider label="블룸 강도" min={0} max={2} step={0.01} value={mt.bloomIntensity} onChange={(v) => setMt({ bloomIntensity: v })} />
+      {mt.bloomIntensity > 0 && (
+        <>
+          <Slider label="블룸 문턱" min={0} max={10} step={0.1} value={mt.bloomThreshold} onChange={(v) => setMt({ bloomThreshold: v })} />
+          <Slider label="블룸 반경" min={0} max={1} step={0.01} value={mt.bloomRadius} onChange={(v) => setMt({ bloomRadius: v })} />
+        </>
+      )}
+      <Checkbox label="HDR 모니터 출력(WebGPU)" checked={mt.hdrOutput} onChange={(v) => setMt({ hdrOutput: v })} />
+      <Select label="진단 화면" value={mt.channel} options={['final', 'albedo', 'normal', 'shadow']} onChange={(v) => setMt({ channel: v as typeof mt.channel })} />
+
+      {sub('움직임·전환')}
+      <Checkbox label="움직일 때 래스터(끄면 경로 추적 미리보기)" checked={mt.hybrid} onChange={(v) => setMt({ hybrid: v })} />
+      {mt.hybrid && (
+        <>
+          <Slider label="멈춤 판정" unit="ms" min={50} max={1500} step={10} value={mt.stillMs} onChange={(v) => setMt({ stillMs: v })} />
+          <Slider label="넘어가기 전 샘플" min={1} max={16} step={1} value={mt.readySamples} onChange={(v) => setMt({ readySamples: v })} />
+          <Slider label="겹쳐 바꾸기" unit="ms" min={0} max={1500} step={10} value={mt.fadeMs} onChange={(v) => setMt({ fadeMs: v })} />
+        </>
+      )}
+
+      {sub('진단')}
+      <pre style={{ margin: 0, fontSize: 10.5, color: '#cbd5e1', whiteSpace: 'pre-wrap', lineHeight: 1.45 }}>{diag}</pre>
+      <button onClick={resetMt} style={{ marginTop: 8, padding: '4px 10px', fontSize: 11, cursor: 'pointer', width: '100%' }}>
+        경로 추적 설정 기본값으로
+      </button>
+    </Section>
   );
 }
 
@@ -400,15 +565,12 @@ function Slider({
   value: number;
   onChange: (v: number) => void;
 }) {
+  // 한 줄 — 이름 | 조절바 | 입력칸 단위. 긴 이름은 말줄임(마우스를 올리면 전체)
   return (
     <div style={sliderRowStyle}>
-      <div style={sliderLabelStyle}>
-        <span>{label}</span>
-        <span style={sliderValueStyle}>
-          {value.toFixed(step < 1 ? 2 : 0)}
-          {unit}
-        </span>
-      </div>
+      <span style={oneLineLabelStyle} title={label}>
+        {label}
+      </span>
       <input
         type="range"
         min={min}
@@ -418,6 +580,10 @@ function Slider({
         onChange={(e) => onChange(parseFloat(e.target.value))}
         style={rangeStyle}
       />
+      <span style={{ ...sliderValueStyle, display: 'flex', alignItems: 'center', gap: 2, flex: '0 0 auto' }}>
+        <NumberField value={value} onChange={onChange} min={min} max={max} step={step} width={54} />
+        <span style={{ width: 22, color: '#999', fontSize: 11 }}>{unit}</span>
+      </span>
     </div>
   );
 }
@@ -432,9 +598,9 @@ function Checkbox({
   onChange: (v: boolean) => void;
 }) {
   return (
-    <label style={checkboxRowStyle}>
+    <label style={checkboxRowStyle} title={label}>
       <input type="checkbox" checked={checked} onChange={(e) => onChange(e.target.checked)} />
-      <span>{label}</span>
+      <span style={{ minWidth: 0, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{label}</span>
     </label>
   );
 }
@@ -476,7 +642,9 @@ function Select<T extends string>({
 }) {
   return (
     <div style={selectRowStyle}>
-      <span style={selectLabelStyle}>{label}</span>
+      <span style={selectLabelStyle} title={label}>
+        {label}
+      </span>
       <select
         value={value}
         onChange={(e) => onChange(e.target.value as T)}
@@ -552,20 +720,26 @@ const sectionTitleStyle: React.CSSProperties = {
   color: '#ff9800',
   textTransform: 'uppercase',
   letterSpacing: '0.05em',
+  whiteSpace: 'nowrap',
+  overflow: 'hidden',
+  textOverflow: 'ellipsis',
 };
 
 const sliderRowStyle: React.CSSProperties = {
   display: 'flex',
-  flexDirection: 'column',
-  gap: 3,
+  alignItems: 'center',
+  gap: 6,
+  fontSize: 12,
 };
 
-const sliderLabelStyle: React.CSSProperties = {
-  display: 'flex',
-  justifyContent: 'space-between',
-  alignItems: 'center',
-  fontSize: 12,
+/** 한 줄 이름 — 넘치면 말줄임 */
+const oneLineLabelStyle: React.CSSProperties = {
+  flex: '0 0 38%',
+  minWidth: 0,
   color: '#bbb',
+  whiteSpace: 'nowrap',
+  overflow: 'hidden',
+  textOverflow: 'ellipsis',
 };
 
 const sliderValueStyle: React.CSSProperties = {
@@ -574,7 +748,8 @@ const sliderValueStyle: React.CSSProperties = {
 };
 
 const rangeStyle: React.CSSProperties = {
-  width: '100%',
+  flex: 1,
+  minWidth: 40,
   accentColor: '#ff9800',
 };
 
@@ -596,6 +771,12 @@ const selectRowStyle: React.CSSProperties = {
 
 const selectLabelStyle: React.CSSProperties = {
   color: '#bbb',
+  minWidth: 0,
+  flex: 1,
+  whiteSpace: 'nowrap',
+  overflow: 'hidden',
+  textOverflow: 'ellipsis',
+  marginRight: 6,
 };
 
 const selectStyle: React.CSSProperties = {
@@ -617,6 +798,10 @@ const colorRowStyle: React.CSSProperties = {
 const colorLabelStyle: React.CSSProperties = {
   color: '#bbb',
   flex: 1,
+  minWidth: 0,
+  whiteSpace: 'nowrap',
+  overflow: 'hidden',
+  textOverflow: 'ellipsis',
 };
 
 const colorInputStyle: React.CSSProperties = {
@@ -681,3 +866,20 @@ const removeBtnStyle: React.CSSProperties = {
   cursor: 'pointer',
   fontSize: 11,
 };
+/** 커스틱 — 유리를 지나 모인 빛(래스터·경로 추적 공통, Caustics) */
+function CausticControls() {
+  const mt = useMutracerStore((s) => s.mt);
+  const setMt = useMutracerStore((s) => s.setMt);
+  return (
+    <>
+      <Checkbox label="커스틱 (유리 그림자 속 빛)" checked={mt.causticShadows} onChange={(v) => setMt({ causticShadows: v })} />
+      {mt.causticShadows && (
+        <>
+          <Slider label="커스틱 광자 수" min={20000} max={2000000} step={10000} value={mt.causticPhotons} onChange={(v) => setMt({ causticPhotons: v })} />
+          <Slider label="커스틱 번짐" min={0} max={4} step={0.1} value={mt.causticBlur} onChange={(v) => setMt({ causticBlur: v })} />
+          <Slider label="커스틱 세기" min={0} max={4} step={0.05} value={mt.causticStrength} onChange={(v) => setMt({ causticStrength: v })} />
+        </>
+      )}
+    </>
+  );
+}

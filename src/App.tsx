@@ -29,6 +29,7 @@ import { ImportedModels } from '@/features/models/ImportedModels';
 import { registerOrbitControls } from '@/features/models/gizmoGuard';
 import { DynamicSky } from '@/engine/lighting/DynamicSky';
 import { PathtracerRenderer } from '@/engine/pathtracer/PathtracerRenderer';
+import { MutracerRenderer } from '@/engine/pathtracer/MutracerRenderer';
 import { CustomLights } from '@/engine/lighting/CustomLights';
 import { EditTool } from '@/features/editing/EditTool';
 import { EditOverlay } from '@/features/editing/EditOverlay';
@@ -52,6 +53,23 @@ import { ModulePlacement } from '@/features/spaceModules/ModulePlacement';
 import { startModuleWallSync } from '@/features/spaceModules/syncModuleWalls';
 import { ModulePalette } from './ui/ModulePalette';
 import { OpeningConflictDialog } from './ui/OpeningConflictDialog';
+import { HomvuePanel } from '@/features/homvue/HomvuePanel';
+import { HomvueInspector } from '@/features/homvue/HomvueInspector';
+import { HomvueEstimatePanel } from '@/features/homvue/HomvueEstimatePanel';
+import { HomvueMinimap, HomvueMinimapCapture } from '@/features/homvue/HomvueMinimap';
+import { HomvueCheckProducts } from '@/features/homvue/HomvueCheckProducts';
+import { HomvueConsultationPanel } from '@/features/homvue/HomvueConsultationPanel';
+import { HomvueApartment } from '@/features/homvue/HomvueApartment';
+import { useHomvueStore } from '@/features/homvue/homvueStore';
+import { HomvueWalkControls } from '@/features/homvue/HomvueWalkControls';
+import { useHomvueBackdrop } from '@/features/homvue/homvueBackdrop';
+import { FrameMeter, FrameMeterHotkey } from '@/engine/debug/FrameMeter';
+import { FocusSelection } from '@/engine/camera/FocusSelection';
+import { PressJitterGuard } from '@/engine/camera/PressJitterGuard';
+import { GlassShadows } from '@/engine/lighting/GlassShadows';
+import { Caustics } from '@/engine/lighting/caustics/Caustics';
+// 선택은 한 종류만 — 저장소를 지켜보다 선택이 생기면 다른 종류를 지운다(부작용 import)
+import '@/features/selection/selectionExclusivity';
 
 /**
  * HomePlanner3 루트 컴포넌트.
@@ -96,7 +114,8 @@ export default function App({
     <HostProvider handlers={handlers}>
       <div style={{ position: 'relative', width: '100%', height: '100%' }}>
         {showToolbar && <Toolbar />}
-        <ModulePalette />
+        {/* Homvue 평면을 띄우면 홈플래너3 도면이 숨겨지므로 그 도면용 공간 모듈 팔레트도 숨긴다(미니맵 자리) */}
+        <HomvueHidden><ModulePalette /></HomvueHidden>
         {showLightingPanel && <LightingPanel />}
         {showLightingPanel && <LightInspector />}
         {showLightingPanel && <MeshInspector />}
@@ -105,6 +124,13 @@ export default function App({
         {showLightingPanel && <ModelInspector />}
         <SpaceModuleInspector />
         <OpeningConflictDialog />
+        <HomvuePanel />
+        <HomvueInspector />
+        <HomvueEstimatePanel />
+        <HomvueMinimap />
+        <HomvueCheckProducts />
+        <HomvueConsultationPanel />
+        <FrameMeterHotkey />
         <Canvas
           // 빈 곳 클릭(씬 오브젝트 미적중) → 배치 상품 선택 해제. 기즈모 클릭은 이벤트를
           // TransformControls가 가로채므로 여기로 오지 않음.
@@ -135,12 +161,20 @@ export default function App({
           <SceneLights />
           {/* 섀도맵 demand 렌더링 — 변화 있을 때만 재렌더 (드래그 끊김 해소) */}
           <ShadowDemand />
+          <GlassShadows />
+          <Caustics />
           <SceneEnvironment />
           <RendererSettings />
           <SceneGrid />
+          <FrameMeter />
+          <FocusSelection />
+          <PressJitterGuard />
           <OrbitControlsConditional />
 
-          <PlanScene showCeiling={showCeiling} showProducts={showProducts} />
+          <PlanSceneGate showCeiling={showCeiling} showProducts={showProducts} />
+          <HomvueApartment />
+          <HomvueWalkControls />
+          <HomvueMinimapCapture />
           <ImportedModels />
           <ProductPlacement />
           <ModulePlacement />
@@ -149,6 +183,7 @@ export default function App({
           <ReflectionProbe />
           <IrradianceProbeGrid />
           <PathtracerRenderer />
+          <MutracerRenderer />
           <CustomLights />
           <EditTool />
           <EditOverlay />
@@ -169,6 +204,19 @@ export default function App({
       </div>
     </HostProvider>
   );
+}
+
+/** Homvue 평면이 떠 있는 동안 숨길 홈플래너3 도면 도구 */
+function HomvueHidden({ children }: { children: React.ReactNode }) {
+  const homvueActive = useHomvueStore((s) => s.plan !== null);
+  return homvueActive ? null : <>{children}</>;
+}
+
+/** Homvue 아파트를 띄우면 홈플래너3 자체 도면(벽·바닥·천장)은 숨긴다 — 두 집이 겹치지 않게. */
+function PlanSceneGate(props: { showCeiling: boolean; showProducts: boolean }) {
+  const homvueActive = useHomvueStore((s) => s.plan !== null);
+  if (homvueActive) return null;
+  return <PlanScene {...props} />;
 }
 
 /** 환경맵을 배경으로 안 쓸 때만 단색 배경 적용. */
@@ -233,6 +281,7 @@ function SceneLights() {
   const sunVisible = useLightingStore((s) => s.sunVisible);
   const ambientVisible = useLightingStore((s) => s.ambientVisible);
   const hemiVisible = useLightingStore((s) => s.hemiVisible);
+  const sunColor = useLightingStore((s) => s.sunColor);
   const position = sphericalToCartesian(azimuth, elevation, distance);
   const mapSize = shadowMapSizeFor(shadowQuality);
   // shadowStrength = 그림자 진하기. 1.0 에서 간접광 거의 0 → 그림자 영역이 검정에 근접.
@@ -261,6 +310,7 @@ function SceneLights() {
           key={`dir-${mapSize}-${castShadow ? 1 : 0}-${shadowSoftness}-${shadowFrustumSize}-${shadowCameraNear}-${shadowCameraFar}`}
           position={position}
           intensity={sunVisible ? intensity : 0}
+          color={sunColor}
           castShadow={sunVisible && castShadow}
           shadow-mapSize={[mapSize, mapSize]}
           shadow-radius={shadowSoftness}
@@ -339,6 +389,18 @@ function SceneEnvironment() {
   // 적용 안 하면 shadowStrength 슬라이더 변화가 거의 안 보임. sky 가시성 유지 위해 약하게.
   // env 는 햇빛 영역의 PBR 디테일(반사, fresnel) 보존에 필요해 30% 만 남김.
   const envFactor = Math.max(0, 1 - shadowStrength * 0.85);
+  // Homvue 평면을 띄우면 언리얼 HDRIBackdrop 의 HDR 을 환경맵·창밖 배경으로 (세기도 언리얼 값)
+  const backdrop = useHomvueBackdrop();
+  if (backdrop) {
+    return (
+      <>
+        {/* 환경광 세기는 홈플래너3 슬라이더 그대로 — 언리얼 세기(1~2)는 언리얼 노출(평면별 +1.7~+11.5EV) 기준이라
+            그대로 쓰면 집이 하얗게 날아간다. HDR 은 그림(하늘·땅 색 분포)만 가져온다 */}
+        <Environment files={backdrop.envUrl} environmentIntensity={intensity * envFactor} />
+        <Environment files={backdrop.url} background="only" backgroundIntensity={backdrop.intensity} />
+      </>
+    );
+  }
   return (
     <Environment preset={preset} background={background} environmentIntensity={intensity * envFactor} />
   );
@@ -352,7 +414,7 @@ function SceneGrid() {
   const cellColor = useViewStore((s) => s.gridCellColor);
   const sectionColor = useViewStore((s) => s.gridSectionColor);
   const opacity = useViewStore((s) => s.gridOpacity);
-  const ptEnabled = useLightingStore((s) => s.pathtracerEnabled);
+  const ptEnabled = useLightingStore((s) => s.pathtracerEnabled || s.giMode === 'mutracer');
   if (!show || ptEnabled) return null;
   return (
     <Grid
@@ -406,7 +468,7 @@ function SyncRenderer({ exposure, toneMapping }: { exposure: number; toneMapping
 /** PCSS 소프트 그림자 게이트 — pcssEnabled && !pathtracer 일 때만 셰이더 패치 mount. */
 function PcssGate() {
   const enabled = useLightingStore((s) => s.pcssEnabled);
-  const ptEnabled = useLightingStore((s) => s.pathtracerEnabled);
+  const ptEnabled = useLightingStore((s) => s.pathtracerEnabled || s.giMode === 'mutracer');
   const size = useLightingStore((s) => s.pcssSize);
   const samples = useLightingStore((s) => s.pcssSamples);
   if (!enabled || ptEnabled) return null;
@@ -414,7 +476,7 @@ function PcssGate() {
 }
 
 function PostFXGate() {
-  const ptEnabled = useLightingStore((s) => s.pathtracerEnabled);
+  const ptEnabled = useLightingStore((s) => s.pathtracerEnabled || s.giMode === 'mutracer');
   if (ptEnabled) return null;
   return <PostFX />;
 }
@@ -425,11 +487,14 @@ function OrbitControlsConditional() {
   // path tracer 활성 시 damping OFF — 관성으로 마우스 놓은 뒤에도 ~1초 카메라가 계속
   // 움직여 path tracer 가 그동안 계속 reset → "정지 즉시 수렴" 이 안 됨. damping 끄면
   // 놓는 순간 카메라 정지 → 즉시 누적 시작.
-  const ptEnabled = useLightingStore((s) => s.pathtracerEnabled);
+  const ptEnabled = useLightingStore((s) => s.pathtracerEnabled || s.giMode === 'mutracer');
   // 기즈모 드래그 도중 언마운트로 카메라 회전이 영구 정지하는 버그 방지 — OrbitControls 인스턴스를
   // gizmoGuard 에 등록해 두고, 기즈모 언마운트 가드(GizmoOrbitGuard)가 enabled 를 복구할 수 있게 한다.
   // ref 콜백으로 정확히 mount 시 등록 / unmount 시 해제(no-deps effect 는 인스턴스가 뒤섞임).
   const orbitReg = useRef<(() => void) | null>(null);
+  // Homvue 투어(1인칭) 중에는 HomvueWalkControls 가 카메라를 움직인다
+  const homvueWalk = useHomvueStore((s) => s.walk && s.plan !== null);
+  if (homvueWalk) return null;
   return (
     <OrbitControls
       ref={(o) => {

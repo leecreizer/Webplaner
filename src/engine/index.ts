@@ -14,6 +14,7 @@ export { PostFX } from './postfx/PostFX';
 
 // Path tracer
 export { PathtracerRenderer } from './pathtracer/PathtracerRenderer';
+export { MutracerRenderer } from './pathtracer/MutracerRenderer';
 
 // Mesh utils
 export * from './mesh/MeshGenerator';

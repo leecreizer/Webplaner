@@ -50,7 +50,8 @@ export function PostFX() {
   if (!anyEnabled) return null;
 
   return (
-    <EffectComposer ref={composerRef} multisampling={0} stencilBuffer={false} enableNormalPass>
+    // 법선 패스는 SSAO·GTAO 만 쓴다 — 켜 두면 장면 전체를 한 번 더 그린다(Homvue 84A 그리기 호출 2배, 실측)
+    <EffectComposer ref={composerRef} multisampling={0} stencilBuffer={false} enableNormalPass={ssaoEnabled || gtaoEnabled}>
       {/* GTAO 토글 자리 — pmndrs/postprocessing native SSAO Effect. props 최소화로 silent
           skip 방지. radius/intensity 만 store 에 매핑, 나머지는 라이브러리 디폴트. */}
       {gtaoEnabled ? (

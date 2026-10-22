@@ -38,6 +38,13 @@ export interface CustomLight {
   width?: number;
   /** RectAreaLight height(m). */
   height?: number;
+  /**
+   * 회전(라디안, XYZ 오일러) — 모든 조명. 빛은 자기 -Z 쪽으로 나간다.
+   * 사각: 없으면 아래([-π/2,0,0]) · 스포트: 있으면 target 대신 이 방향 · 반구: 하늘 방향(기본 위)을 기울임 · 점: 방향 없음(값만 저장)
+   */
+  rotation?: [number, number, number];
+  /** 그림자 진하기 0~1 (three LightShadow.intensity) — 점·스포트 */
+  shadowIntensity?: number;
   /** HemisphereLight ground 색. */
   groundColor?: string;
   /** 그림자 캐스팅 여부 (point/spot). */

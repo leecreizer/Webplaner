@@ -19,6 +19,11 @@ export interface MaterialEdit {
   transmission?: number;
   /** 굴절률. */
   ior?: number;
+  /**
+   * 커스틱(그림자 속에 모이는 빛) — 투과가 있을 때만 의미. 없거나 true 면 그린다(빛 추적 계산, 느림),
+   * false 면 보통 그림자만. 유리 모습(굴절)은 어느 쪽이든 그대로
+   */
+  caustics?: boolean;
   /** 클리어코트 (자동차 도장/광택). */
   clearcoat?: number;
   clearcoatRoughness?: number;

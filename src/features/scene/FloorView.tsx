@@ -14,6 +14,7 @@ import type { Wall } from '@/domain/structures/Wall';
 import { isModuleWall, wallSourceModules, setModuleDragging } from '@/features/spaceModules/syncModuleWalls';
 import { useSpaceModuleStore } from '@/features/spaceModules/spaceModuleStore';
 import { usePlacedProductStore } from '@/features/placement/placedProductStore';
+import { isGizmoBusy } from '@/features/models/gizmoGuard';
 
 const _csgEval = new Evaluator();
 
@@ -96,6 +97,8 @@ export function FloorView({
         userData={{ editKind: 'floor', editOwnerId: space.spaceIndex }}
         onPointerDown={(e) => {
           if (e.button !== 0) return;
+          // 기즈모 핸들 조작 중이면 선택 가로채기 금지 (핸들 뒤 메시 오선택 방지)
+          if (isGizmoBusy()) return;
           e.stopPropagation();
           // ⭐ 2D 탑뷰: 바닥 드래그 = **공간 통째 이동** (벽 그리기로 만든 자유형 공간 포함).
           //   - 공간의 벽이 전부 한 모듈 소유면 → 모듈 이동으로 위임 (스냅/동반이동 유지)

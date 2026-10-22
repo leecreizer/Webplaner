@@ -143,7 +143,7 @@ export function ModelInspector() {
   );
 }
 
-function Vec3({
+export function Vec3({
   value,
   onChange,
   step,
@@ -170,7 +170,7 @@ function Vec3({
   );
 }
 
-function NumberRow({
+export function NumberRow({
   label,
   value,
   min,
@@ -208,7 +208,7 @@ function NumberRow({
   );
 }
 
-function Section({ title, children }: { title: string; children: React.ReactNode }) {
+export function Section({ title, children }: { title: string; children: React.ReactNode }) {
   return (
     <div style={sectionStyle}>
       <div style={sectionTitleStyle}>{title}</div>
@@ -304,6 +304,12 @@ function MaterialSection({ modelId }: { modelId: string }) {
       <NumberRow label="거칠기" value={val('roughness')} min={0} max={1} step={0.02} onChange={(v) => set({ roughness: v })} />
       <NumberRow label="금속성" value={val('metalness')} min={0} max={1} step={0.02} onChange={(v) => set({ metalness: v })} />
       <NumberRow label="투과(유리)" value={val('transmission')} min={0} max={1} step={0.02} onChange={(v) => set({ transmission: v })} />
+      {val('transmission') > 0 && (
+        <label style={{ ...rowStyle, cursor: 'pointer' }} title="켜면 이 유리를 지나 휘어 모인 빛(커스틱)을 그림자 속에 그린다(빛 추적 계산 — 느림). 끄면 보통 그림자만. 유리 모습(굴절)은 어느 쪽이든 그대로">
+          <input type="checkbox" checked={edit.caustics !== false} onChange={(e) => set({ caustics: e.target.checked })} />
+          <span style={{ fontSize: 11, whiteSpace: 'nowrap' }}>커스틱 (그림자 속 빛, 느림)</span>
+        </label>
+      )}
       <NumberRow label="굴절률" value={val('ior')} min={1} max={2.5} step={0.01} onChange={(v) => set({ ior: v })} />
       <NumberRow label="클리어코트" value={val('clearcoat')} min={0} max={1} step={0.02} onChange={(v) => set({ clearcoat: v })} />
       <NumberRow label="투명도" value={val('opacity')} min={0} max={1} step={0.02} onChange={(v) => set({ opacity: v })} />
@@ -317,7 +323,7 @@ function MaterialSection({ modelId }: { modelId: string }) {
   );
 }
 
-function ColorRow({ label, value, onChange }: { label: string; value: string; onChange: (v: string) => void }) {
+export function ColorRow({ label, value, onChange }: { label: string; value: string; onChange: (v: string) => void }) {
   return (
     <label style={rowStyle}>
       <span style={lblStyle}>{label}</span>
@@ -340,7 +346,7 @@ const nameInputStyle: React.CSSProperties = {
   fontWeight: 600,
 };
 
-const closeBtnStyle: React.CSSProperties = {
+export const closeBtnStyle: React.CSSProperties = {
   width: 22,
   height: 22,
   padding: 0,
@@ -367,7 +373,7 @@ const sectionTitleStyle: React.CSSProperties = {
   letterSpacing: 0.5,
 };
 
-const rowStyle: React.CSSProperties = {
+export const rowStyle: React.CSSProperties = {
   display: 'flex',
   alignItems: 'center',
   gap: 6,
@@ -390,7 +396,7 @@ const numInputStyle: React.CSSProperties = {
   fontSize: 11,
 };
 
-const resetBtnStyle: React.CSSProperties = {
+export const resetBtnStyle: React.CSSProperties = {
   flex: 1,
   padding: '6px 10px',
   background: '#3f3f46',

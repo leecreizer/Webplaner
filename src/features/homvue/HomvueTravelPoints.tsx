@@ -1,0 +1,124 @@
+import { useEffect, useMemo, useState } from 'react';
+import { useThree } from '@react-three/fiber';
+import { DoubleSide, Raycaster, Vector3, type Object3D } from 'three';
+import { useHomvueStore } from './homvueStore';
+import { isGizmoBusy } from '@/features/models/gizmoGuard';
+import { sameDotSpace, type PlanData } from './homvueAssets';
+import { toScene, travelSpots, type TravelSpot } from './homvueTravel';
+
+/**
+ * 투어 지점 표시 — 언리얼 WB_TravelTargetPoint · WB_Dot · WB_RoomDotButton 대응. 아파트 그룹 안(평면 좌표)에 둔다.
+ *
+ * - 공간별 표시: 지금 방(카메라 아래 바닥의 방, 거실·주방은 한 공간)의 투어 지점만 보이고, 다른 방은 주 지점 하나만
+ *   「방 이동」 점(큰 고리)으로 보인다. 지금 방을 모르면(위에서 내려다볼 때) 방마다 주 지점만.
+ * - 바닥에 붙이기: 언리얼 투어 지점은 바닥 위 5cm(Z=5)에 놓여 있어 그대로 쓰면 떠 보인다 — 바로 아래 실제 바닥면 위 5mm.
+ * - 누르면 그 지점 눈높이로 이동(투어 모드 켜짐). 방 이동 점이면 그 방을 보며 도착(방 이동 버튼과 같음).
+ * - 가구·벽에 가려지지 않게 항상 위에 그린다 — 언리얼은 투어 점을 화면 UI(WB_Dot)로 그려 침대 밑 점도 보이고 눌린다.
+ *   클릭도 점이 우선(상품·벽·바닥 처리기가 점이 함께 맞으면 양보 — HomvueApartment yieldsToDot).
+ */
+export function HomvueTravelPoints({ plan }: { plan: PlanData }) {
+  const modules = useHomvueStore((s) => s.modules);
+  const currentRoom = useHomvueStore((s) => s.currentRoom);
+  const walk = useHomvueStore((s) => s.walk);
+  const spots = useMemo(() => travelSpots(plan, modules), [plan, modules]);
+  const floorY = useFloorHeights(plan.id, spots);
+
+  const here = (s: TravelSpot) => walk && !!currentRoom && sameDotSpace(s.room, currentRoom);
+  const shown = spots.map((s, i) => ({ s, i })).filter(({ s }) => here(s) || s.main);
+
+  return (
+    <group name="homvue:travel">
+      {shown.map(({ s, i }) => (
+        <TravelDot key={i} spot={s} y={floorY[i] ?? s.local.y} roomJump={!here(s)} />
+      ))}
+    </group>
+  );
+}
+
+/** 투어 지점마다 바로 아래 바닥면 높이(평면 좌표). 바닥 GLB 가 늦게 들어오므로 다 찾을 때까지 몇 번 다시 본다 */
+function useFloorHeights(planId: string, spots: TravelSpot[]): (number | undefined)[] {
+  const scene = useThree((s) => s.scene);
+  const [ys, setYs] = useState<(number | undefined)[]>([]);
+  useEffect(() => {
+    let tries = 0;
+    let timer = 0;
+    const run = () => {
+      const root = scene.getObjectByName(`homvue:${planId}`);
+      const floors: Object3D[] = [];
+      root?.traverse((o) => {
+        if (o.userData?.homvueFloorRoom || o.userData?.homvue?.blueprint?.startsWith('/LevelStatic/')) floors.push(o);
+      });
+      if (!root || !floors.length) {
+        if (tries++ < 20) timer = window.setTimeout(run, 1500);
+        return;
+      }
+      root.updateMatrixWorld(true);
+      const ray = new Raycaster();
+      const down = new Vector3(0, -1, 0);
+      const next = spots.map((s) => {
+        const from = s.local.clone().applyMatrix4(root.matrixWorld).add(new Vector3(0, 0.5, 0));
+        ray.set(from, down);
+        ray.far = 1.2;
+        const hit = ray.intersectObjects(floors, true).find((h) => !h.object.userData.homvueCeiling);
+        return hit ? root.worldToLocal(hit.point.clone()).y : undefined;
+      });
+      setYs(next);
+      if (next.some((y) => y === undefined) && tries++ < 20) timer = window.setTimeout(run, 1500);
+    };
+    run();
+    return () => window.clearTimeout(timer);
+  }, [scene, planId, spots]);
+  return ys;
+}
+
+function TravelDot({ spot, y, roomJump }: { spot: TravelSpot; y: number; roomJump: boolean }) {
+  const [hover, setHover] = useState(false);
+  const gl = useThree((s) => s.gl);
+  const { x, z } = spot.local;
+  const inner = roomJump ? 0.2 : 0.12;
+  const outer = roomJump ? (hover ? 0.3 : 0.27) : hover ? 0.2 : 0.17;
+  return (
+    <group
+      renderOrder={20}
+      position={[x, y + 0.005, z]}
+      rotation={[-Math.PI / 2, 0, 0]}
+      userData={{ homvueDot: true, roomJump, room: spot.room }}
+      onPointerOver={(e) => {
+        e.stopPropagation();
+        setHover(true);
+        gl.domElement.style.cursor = 'pointer';
+      }}
+      onPointerOut={() => {
+        setHover(false);
+        gl.domElement.style.cursor = '';
+      }}
+      onPointerDown={(e) => e.stopPropagation()}
+      onClick={(e) => {
+        if (isGizmoBusy()) return; // 기즈모 손잡이를 잡는 클릭 — 투어 이동하지 않는다
+        e.stopPropagation();
+        if (e.delta > 4) return; // 둘러보느라 끈 것
+        const st = useHomvueStore.getState();
+        if (roomJump && spot.room) st.goToRoom(spot.room);
+        else st.travelTo(toScene(new Vector3(x, y, z), st.offset), spot.room);
+      }}
+    >
+      {/* 고리 안쪽(빈 가운데)을 눌러도 잡히도록 보이지 않는 원판을 클릭 영역으로 */}
+      <mesh>
+        <circleGeometry args={[outer + 0.06, 24]} />
+        <meshBasicMaterial transparent opacity={0} depthWrite={false} depthTest={false} side={DoubleSide} />
+      </mesh>
+      <mesh renderOrder={20}>
+        <ringGeometry args={[inner, outer, 40]} />
+        {/* 편집 보조물과 같은 MeshBasicMaterial — MuTracer 렌더에서 빠지고 위에 겹쳐 그려진다 */}
+        <meshBasicMaterial
+          color={hover ? '#38bdf8' : roomJump ? '#7dd3fc' : '#ffffff'}
+          transparent
+          opacity={hover ? 0.95 : 0.8}
+          side={DoubleSide}
+          depthWrite={false}
+          depthTest={false}
+        />
+      </mesh>
+    </group>
+  );
+}

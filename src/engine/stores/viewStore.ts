@@ -30,6 +30,10 @@ export interface ViewState {
   /** Canvas clear color — `<color attach="background">` 에 바인딩. */
   sceneBackgroundColor: string;
 
+  // ===== 성능 확인 ===========================================
+  /** 프레임 체크(초당 화면 수·프레임 시간·그리기 호출) 표시 — engine/debug/FrameMeter */
+  showFrameMeter: boolean;
+
   // ===== Setters =============================================
   setViewMode: (v: ViewMode) => void;
   setWallThickPreview: (v: number) => void;
@@ -41,6 +45,7 @@ export interface ViewState {
   setGridSectionColor: (v: string) => void;
   setGridOpacity: (v: number) => void;
   setSceneBackgroundColor: (v: string) => void;
+  setShowFrameMeter: (v: boolean) => void;
 }
 
 export const useViewStore = create<ViewState>((set) => ({
@@ -57,6 +62,9 @@ export const useViewStore = create<ViewState>((set) => ({
 
   sceneBackgroundColor: '#ffffff',
 
+  // Homvue 이식 성능 작업 중이라 기본으로 켜 둔다(사용자 요청 2026-10-21) — ` 키나 패널에서 끈다
+  showFrameMeter: true,
+
   setViewMode: (v) => set({ viewMode: v }),
   setWallThickPreview: (v) => set({ wallThickPreview: v }),
   setShowNodeMarkers: (v) => set({ showNodeMarkers: v }),
@@ -67,4 +75,5 @@ export const useViewStore = create<ViewState>((set) => ({
   setGridSectionColor: (v) => set({ gridSectionColor: v }),
   setGridOpacity: (v) => set({ gridOpacity: v }),
   setSceneBackgroundColor: (v) => set({ sceneBackgroundColor: v }),
+  setShowFrameMeter: (v) => set({ showFrameMeter: v }),
 }));

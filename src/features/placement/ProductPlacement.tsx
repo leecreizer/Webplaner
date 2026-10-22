@@ -4,6 +4,7 @@ import { standardToPhysical } from '@/domain/materials/standardToPhysical';
 import { useFrame, useThree } from '@react-three/fiber';
 import type { ThreeEvent } from '@react-three/fiber';
 import { requestShadowUpdate } from '@/engine/lighting/ShadowDemand';
+import { useLightingStore } from '@/engine/stores/lightingStore';
 import { registerGizmo, isGizmoBusy } from '@/features/models/gizmoGuard';
 import { GizmoOrbitGuard } from '@/features/models/GizmoOrbitGuard';
 import { clearOtherSelections } from '@/features/selection/clearSelections';
@@ -151,11 +152,13 @@ class ModelErrorBoundary extends Component<{ fallback: ReactNode; children: Reac
 
 /** 배치 박스(모델 없을 때 / 폴백) — 그룹 로컬 좌표 기준 */
 function BoxMesh({ p, sel }: { p: PlacedProduct; sel: boolean }) {
+  // 경로 추적 모드에선 선택해도 색을 바꾸지 않는다(재질이 바뀌면 경로 추적이 처음부터 다시 쌓는다) — 엣지로 표시
+  const mutracer = useLightingStore((s) => s.giMode === 'mutracer');
   return (
     <mesh position={[0, ((p.lift ?? 0) + p.h / 2) * M, 0]} castShadow receiveShadow>
       <boxGeometry args={[p.w * M, p.h * M, p.d * M]} />
       {/* 어드민이 컬러를 지정하면 그 색으로(선택 표시는 엣지로), 없으면 기존 우드 톤 */}
-      <meshStandardMaterial color={p.color ?? (sel ? '#b98a3e' : '#c9a063')} roughness={0.6} />
+      <meshStandardMaterial color={p.color ?? (sel && !mutracer ? '#b98a3e' : '#c9a063')} roughness={0.6} />
       {sel && <Edges scale={1.001} threshold={15} color="#22d3ee" />}
     </mesh>
   );
@@ -563,6 +566,7 @@ const PlacedItem = memo(function PlacedItem({ p, sel, onDown, doorsOpen, doorOpe
   return (
     <group
       ref={(g: Group | null) => { if (g) placedGroupRefs.set(p.id, g); else placedGroupRefs.delete(p.id); }}
+      userData={{ focusId: `placed:${p.id}` }}
       position={[p.x, 0, p.z]}
       rotation={[0, (p.ry * Math.PI) / 180, 0]}
       onPointerDown={(e) => {
@@ -736,8 +740,9 @@ export function ProductPlacement() {
   // 기즈모 모드 단축키: G/T=이동, R=회전. O=도어 열림/닫힘 토글(애니메이션 확인용).
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'r' || e.key === 'R') setGizmoMode('rotate');
-      if (e.key === 'g' || e.key === 'G' || e.key === 't' || e.key === 'T') setGizmoMode('translate');
+      // 키 위치(code)로 — 한글 입력 상태면 e.key 가 ㄱ·ㅎ·ㅅ 으로 들어와 단축키가 안 먹었다
+      if (e.code === 'KeyR') setGizmoMode('rotate');
+      if (e.code === 'KeyG' || e.code === 'KeyT') setGizmoMode('translate');
       if (e.key === 'o' || e.key === 'O') toggleDoors();
     };
     window.addEventListener('keydown', onKey);

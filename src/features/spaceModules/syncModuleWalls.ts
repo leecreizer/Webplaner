@@ -171,7 +171,10 @@ export function syncModuleWalls(): void {
 /** 모듈 store 변경 구독 + 50ms debounce. 해제 함수 반환. */
 export function startModuleWallSync(): () => void {
   let timer: ReturnType<typeof setTimeout> | null = null;
-  const unsub = useSpaceModuleStore.subscribe(() => {
+  // 모듈 목록이 바뀔 때만 — 선택(selectedId)·충돌 표시 등 다른 변화에도 돌면 빈 곳 클릭(select(null))마다
+  // 모듈 벽을 지우고 새로 만들어 벽·공간 번호가 바뀌었다(씬 트리 「wall-N」·「공간 N」이 클릭마다 바뀜, 사용자 보고)
+  const unsub = useSpaceModuleStore.subscribe((s, prev) => {
+    if (s.modules === prev.modules) return;
     if (timer) clearTimeout(timer);
     timer = setTimeout(() => {
       if (_dragging) {

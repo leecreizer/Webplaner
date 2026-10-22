@@ -24,6 +24,7 @@ import {
 } from 'three';
 import { TeapotGeometry } from 'three/examples/jsm/geometries/TeapotGeometry.js';
 import { useGLTF, TransformControls } from '@react-three/drei';
+import { useWallDrawingStore } from '@/features/drawing/wallDrawingStore';
 import { registerGizmo, isGizmoBusy } from './gizmoGuard';
 import { GizmoOrbitGuard } from './GizmoOrbitGuard';
 import { clearOtherSelections } from '@/features/selection/clearSelections';
@@ -180,6 +181,10 @@ function ModelBody({ model, obj: rawObj }: { model: ImportedModel; obj: Object3D
       const opacity = e.opacity ?? o.opacity ?? 1;
       mat.opacity = opacity;
       mat.transparent = (e.transparent ?? o.transparent ?? false) || opacity < 1;
+      mat.depthWrite = !mat.transparent;
+      // 커스틱 끔 — 유리 모습(굴절)은 그대로, 그림자 속에 모이는 빛만 계산하지 않는다(보통 그림자, Caustics 가 건너뜀)
+      if (e.caustics === false) mat.userData.noCaustics = true;
+      else delete mat.userData.noCaustics;
       mat.needsUpdate = true;
     }
   }, [model.materialEdits, slots, matMap]);
@@ -220,6 +225,7 @@ function ModelBody({ model, obj: rawObj }: { model: ImportedModel; obj: Object3D
     <>
       <group
         ref={groupRef}
+        userData={{ focusId: `model:${model.id}` }}
         position={model.position}
         rotation={rotRad}
         scale={model.scale}
@@ -227,6 +233,8 @@ function ModelBody({ model, obj: rawObj }: { model: ImportedModel; obj: Object3D
           if (e.button !== 0) return;
           // 기즈모 핸들 조작 중이면 선택 가로채기 금지 (핸들 뒤 메시 오선택 방지)
           if (isGizmoBusy()) return;
+          // 벽·공간 그리는 중엔 클릭이 그리기 점이다 — 바닥판·모델을 선택하지 않는다(첫 점에 바닥판 기즈모가 떴다)
+          if (useWallDrawingStore.getState().enabled) return;
           // 그라운드(기본 바닥 plane)는 선택을 가로채지 않는다 — '빈 공간 클릭'과 동일하게
           // 전체 선택 해제만 수행. (재질 편집은 씬 트리에서 선택해 사용)
           if (model.isGround) {

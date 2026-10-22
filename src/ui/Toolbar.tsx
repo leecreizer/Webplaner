@@ -1,4 +1,5 @@
 import { useRef, useState } from 'react';
+import { NumberField } from '@/ui/NumberField';
 import { useWallDrawingStore } from '@/features/drawing/wallDrawingStore';
 import { useViewStore } from '@/engine/stores/viewStore';
 import { useLayoutStore, layoutRegistry } from '@/domain/state/layoutStore';
@@ -8,6 +9,7 @@ import { useEditStore } from '@/features/editing/editStore';
 import { useImportedModelStore, type PrimitiveKind } from '@/features/models/importedModelStore';
 import { useSpaceModuleStore, OPENING_DEFAULTS } from '@/features/spaceModules/spaceModuleStore';
 import { usePlacedProductStore } from '@/features/placement/placedProductStore';
+import { useHomvueStore } from '@/features/homvue/homvueStore';
 
 const LIGHT_OPTIONS: { kind: LightKind; label: string; desc: string }[] = [
   { kind: 'point', label: '포인트 (옴니)', desc: '360° 점 광원' },
@@ -28,6 +30,7 @@ export function Toolbar() {
   const wallThick = useViewStore((s) => s.wallThickPreview);
   const lineWidth = useViewStore((s) => s.drawingLineWidth);
   const showNodes = useViewStore((s) => s.showNodeMarkers);
+  const homvueOpen = useHomvueStore((s) => s.panelOpen || s.plan !== null);
 
   const lineActive = enabled && mode === 'line';
   const rectActive = enabled && mode === 'rectangle';
@@ -90,6 +93,13 @@ export function Toolbar() {
       <AddLightDropdown />
       <AddPrimitiveDropdown />
       <ImportModelButton />
+      <button
+        onClick={useHomvueStore.getState().togglePanel}
+        style={homvueOpen ? activeButtonStyle : buttonStyle}
+        title="Homvue(언리얼)에서 옮긴 아파트·평면·방 스타일"
+      >
+        🏢 Homvue
+      </button>
       <EditModeControls />
       <DoorControls />
       <button onClick={reset} style={dangerButtonStyle}>
@@ -170,8 +180,8 @@ function MiniSlider({
         onChange={(e) => onChange(parseFloat(e.target.value))}
         style={{ accentColor: '#ff9800', width: 60 }}
       />
-      <span style={miniSliderValueStyle}>
-        {value.toFixed(step < 0.1 ? 2 : 1)}
+      <span style={{ ...miniSliderValueStyle, display: 'flex', alignItems: 'center', gap: 2 }}>
+        <NumberField value={value} onChange={onChange} min={min} max={max} step={step} width={50} />
         {unit ?? ''}
       </span>
     </div>

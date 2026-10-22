@@ -28,8 +28,9 @@ export type ToneMappingMode = 'none' | 'linear' | 'reinhard' | 'cineon' | 'aces'
  * - `probe-grid`: IrradianceProbeGrid — 공간마다 cube capture → N개 SH 합산 (Monter
  *   엔진의 irradiance probe grid 개념 — three.js native multi-probe sum 으로 간소화).
  * - `path-tracer`: GPU Path Tracer — 실시간 ray traced GI, 가장 사실적 / 비쌈.
+ * - `mutracer`: MuTracer — WebGPU 경로 추적(OpenPBR·OIDN 디노이즈), r3f 캔버스 위에 겹쳐 표시.
  */
-export type GIMode = 'hemisphere' | 'single-probe' | 'probe-grid' | 'path-tracer';
+export type GIMode = 'hemisphere' | 'single-probe' | 'probe-grid' | 'path-tracer' | 'mutracer';
 
 /** SceneOutliner 에서 선택 가능한 기본 광원 종류. Inspector 가 이걸 보고 적절한 컨트롤 노출. */
 export type BuiltinLightKind = 'sun' | 'ambient' | 'hemi';
@@ -49,6 +50,8 @@ export interface LightingState {
   elevation: number;
   distance: number;
   intensity: number;
+  /** 햇빛 색 — 언리얼 평면은 해 색온도(5000~8000K)를 쓴다(Homvue 환경 설정) */
+  sunColor: string;
   ambientIntensity: number;
 
   // ===== 그림자 ===============================================
@@ -103,6 +106,9 @@ export interface LightingState {
   pathtracerEnabled: boolean;
   /** Path tracer bounces (광 반사 횟수). 3~6이 일반적. 높을수록 정교, 비용 증가. */
   pathtracerBounces: number;
+  /** MuTracer 렌더 해상도 — 화면 크기의 몇 배로 그릴지(1 · 1.5 · 2). 2 면 1920 화면에서 4K 로 그려 줄여 보여 준다
+   *  (슈퍼샘플링). 화면 배율(DPR)이 이미 더 크면 그 값. 전체 화소는 3840×2160 까지. */
+  mutracerRenderScale: number;
 
   // ===== 환경맵 (IBL) =========================================
   environmentPreset: EnvironmentPreset;
@@ -165,6 +171,7 @@ export interface LightingState {
   setElevation: (v: number) => void;
   setDistance: (v: number) => void;
   setIntensity: (v: number) => void;
+  setSunColor: (v: string) => void;
   setAmbientIntensity: (v: number) => void;
   setCastShadow: (v: boolean) => void;
   setShadowQuality: (v: ShadowQuality) => void;
@@ -189,6 +196,7 @@ export interface LightingState {
   setLightProbeIntensity: (v: number) => void;
   setPathtracerEnabled: (v: boolean) => void;
   setPathtracerBounces: (v: number) => void;
+  setMutracerRenderScale: (v: number) => void;
   /** Path tracer 활성 + 시네마틱 프리셋 적용 — bounces↑, HDR env↑↑, 라스터 ambient/GI 0
    *  (path tracer 가 진짜 GI 를 자체 계산하므로 fake ambient 가 결과를 평탄화함). */
   applyPathtracerCinematicPreset: () => void;
@@ -253,6 +261,7 @@ const DEFAULTS = {
   // 햇빛 강도 — 간접광을 줄였으므로 직사광을 강화해 들어오는 곳은 밝게, 안 들어오는 곳은
   // (폐쇄 공간) 어둡게 대비를 줌.
   intensity: 4.5,
+  sunColor: '#ffffff',
   // 전역 균일 ambient — 그림자와 무관하게 모든 mesh 에 들어가므로 0.15 로 낮춰 폐쇄 공간이
   // 자동으로 어두워지게 한다. 사용자가 너무 어두우면 panel 에서 높이면 됨.
   ambientIntensity: 0.15,
@@ -274,9 +283,10 @@ const DEFAULTS = {
   pcssSize: 12,
   pcssSamples: 16,
 
-  // HemisphereLight 도 ambient 와 동일하게 전역 균일 — 디폴트 0.2 로 낮춤. 천창/실외 효과
-  // 필요하면 panel 에서 높임.
-  giMode: 'hemisphere' as GIMode,
+  // 기본 GI = MuTracer 경로 추적 (사용자 지시 2026-10-21). 움직이는 동안·준비 중엔 래스터가 화면을 맡으므로
+  // (MutracerRenderer 하이브리드) 처음부터 켜 두어도 조작이 느려지지 않는다. WebGPU 가 없으면 WebGL 2 로 돈다.
+  // HemisphereLight 도 ambient 와 동일하게 전역 균일 — giIntensity 디폴트 0.2. 천창/실외 효과 필요하면 panel 에서 높임.
+  giMode: 'mutracer' as GIMode,
   giIntensity: 0.2,
   giSkyColor: '#e8f0ff',
   giGroundColor: '#b08560',
@@ -290,6 +300,8 @@ const DEFAULTS = {
   lightProbeIntensity: 1.0,
   pathtracerEnabled: false,
   pathtracerBounces: 4,
+  // 기본 ×1 — ×2 는 샘플 하나가 4배 걸려 첫 화면이 늦게(검은 화면) 나온다. 정지 화면을 4K 로 뽑을 때만 ×2
+  mutracerRenderScale: 1,
 
   environmentPreset: 'apartment' as EnvironmentPreset,
   environmentBackground: false,
@@ -354,6 +366,7 @@ export const useLightingStore = create<LightingState>((set) => ({
   setElevation: (v) => set({ elevation: v }),
   setDistance: (v) => set({ distance: v }),
   setIntensity: (v) => set({ intensity: v }),
+  setSunColor: (v) => set({ sunColor: v }),
   setAmbientIntensity: (v) => set({ ambientIntensity: v }),
   setCastShadow: (v) => set({ castShadow: v }),
   setShadowQuality: (v) => set({ shadowQuality: v }),
@@ -378,6 +391,7 @@ export const useLightingStore = create<LightingState>((set) => ({
   setLightProbeIntensity: (v) => set({ lightProbeIntensity: v }),
   setPathtracerEnabled: (v) => set({ pathtracerEnabled: v }),
   setPathtracerBounces: (v) => set({ pathtracerBounces: v }),
+  setMutracerRenderScale: (v) => set({ mutracerRenderScale: v }),
   applyPathtracerCinematicPreset: () =>
     set({
       giMode: 'path-tracer',

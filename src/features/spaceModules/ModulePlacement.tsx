@@ -326,10 +326,9 @@ export function ModulePlacement() {
               }}
             >
               <planeGeometry args={[m.w, m.d]} />
-              <meshBasicMaterial
-                color={KIND_COLOR[m.kind]}
-                transparent opacity={sel ? 0.4 : 0.18} depthWrite={false}
-              />
+              {/* 보이지 않는 클릭·끌기 판 — 모듈을 고르고 옮기는 손잡이라 남겨 두되 그리지 않는다(사용자 지시 2026-10-21).
+                  고르면 테두리(Edges)만 보인다. 경로 추적 모드에선 편집 보조물로 가구 위에 겹쳐 보였다 */}
+              <meshBasicMaterial color={KIND_COLOR[m.kind]} transparent opacity={0} depthWrite={false} />
               {sel && <Edges scale={1.001} color="#a78bfa" />}
             </mesh>
             <Html center position={[0, 0.05, 0]} style={{ pointerEvents: 'none', fontSize: 11, color: '#334155', fontWeight: 600, textShadow: '0 0 3px #fff' }}>

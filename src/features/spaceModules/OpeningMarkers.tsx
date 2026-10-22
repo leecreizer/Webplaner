@@ -1,10 +1,13 @@
 import { useEffect, useState } from 'react';
 import { useSpaceModuleStore } from './spaceModuleStore';
 import { lastCompiled } from './syncModuleWalls';
+import { isGizmoBusy } from '@/features/models/gizmoGuard';
+import { useLightingStore } from '@/engine/stores/lightingStore';
 
 /** 컴파일된 벽의 문/개구부 위치에 3D 표식을 오버레이 렌더 — 벽 컷아웃은 후속 스펙. */
 export function OpeningMarkers() {
   const modules = useSpaceModuleStore((s) => s.modules);
+  const mutracer = useLightingStore((s) => s.giMode === 'mutracer');
   const movingOpening = useSpaceModuleStore((s) => s.movingOpening);
   const selectedOpening = useSpaceModuleStore((s) => s.selectedOpening);
   // syncModuleWalls 는 50ms debounce 후 lastCompiled 를 갱신하므로,
@@ -46,6 +49,8 @@ export function OpeningMarkers() {
                 // 이미 선택된 표식을 다시 클릭 = 집어서 재배치 모드 (같은/다른 벽에 다시 놓기, ESC 취소)
                 onPointerDown={(e) => {
                   if (e.button !== 0) return;
+                  // 기즈모 핸들 조작 중이면 선택 가로채기 금지 (핸들 뒤 메시 오선택 방지)
+                  if (isGizmoBusy()) return;
                   const st = useSpaceModuleStore.getState();
                   if (st.pendingOpeningType || st.movingOpening) return;
                   e.stopPropagation();
@@ -61,8 +66,9 @@ export function OpeningMarkers() {
                   color={isDoor ? '#92400e' : isWindow ? '#60a5fa' : '#7dd3fc'}
                   transparent={!isDoor}
                   opacity={isDoor ? 1 : isWindow ? 0.55 : 0.4}
-                  emissive={isSelected ? '#22d3ee' : '#000000'}
-                  emissiveIntensity={isSelected ? 0.45 : 0}
+                  // 경로 추적 모드에선 선택 발광을 끈다(재질이 바뀌면 처음부터 다시 쌓는다) — 시안 와이어 박스로 표시
+                  emissive={isSelected && !mutracer ? '#22d3ee' : '#000000'}
+                  emissiveIntensity={isSelected && !mutracer ? 0.45 : 0}
                 />
               </mesh>
               {isSelected && (

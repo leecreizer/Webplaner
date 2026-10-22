@@ -1,0 +1,132 @@
+// 서드파티 라이선스 고지문 생성 — public/THIRD_PARTY_NOTICES.txt
+//
+// package.json 의 dependencies 를 node_modules 에서 재귀로 따라가며 각 패키지의 라이선스 전문을
+// 모은다. MIT · Apache-2.0 · BSD 는 배포물에 저작권 표시와 라이선스 전문을 넣어야 한다.
+// public/ 에 두면 빌드 결과(dist/)에 그대로 실린다. `npm run build` 가 매번 다시 만든다.
+//
+// - @types/* 는 타입 정의뿐이라 번들에 들어가지 않으므로 제외
+// - 패키지가 라이선스 파일을 갖고 있지 않으면 package.json 의 license 필드만 적고 경고한다
+// - 패키지가 별도로 싣는 추가 고지(MuTracer 의 LICENSES/·OIDN 가중치)는 EXTRA 에 명시
+import fs from 'node:fs';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
+
+const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
+const outFile = path.join(root, 'public', 'THIRD_PARTY_NOTICES.txt');
+
+/** 패키지가 라이선스 파일 밖에 따로 두는 고지 — 경로는 패키지 폴더 기준. */
+const EXTRA = {
+  '@meimu/mutracer': [
+    'THIRD_PARTY_NOTICES.md',
+    'LICENSES/*',
+    'oidn/weights/LICENSE.txt', // Intel OIDN 학습 가중치(.tza) — Apache-2.0, 빌드에 에셋으로 실린다
+  ],
+};
+
+const LICENSE_FILE = /^(licen[cs]e|copying|notice)([-._].*)?(\.(md|txt|markdown))?$/i;
+
+function readJson(file) {
+  return JSON.parse(fs.readFileSync(file, 'utf8'));
+}
+
+/** fromDir 에서 위로 올라가며 node_modules/<name> 을 찾는다 (npm 중첩 설치 대응). */
+function resolvePackage(name, fromDir) {
+  let dir = fromDir;
+  for (;;) {
+    const candidate = path.join(dir, 'node_modules', name, 'package.json');
+    if (fs.existsSync(candidate)) return path.dirname(candidate);
+    const parent = path.dirname(dir);
+    if (parent === dir) return null;
+    dir = parent;
+  }
+}
+
+function collect() {
+  const rootPkg = readJson(path.join(root, 'package.json'));
+  const found = new Map(); // dir → package.json
+  const missing = [];
+  const queue = Object.keys(rootPkg.dependencies ?? {}).map((name) => [name, root]);
+  while (queue.length) {
+    const [name, from] = queue.shift();
+    if (name.startsWith('@types/')) continue;
+    const dir = resolvePackage(name, from);
+    if (!dir) {
+      // optionalDependencies 등 설치되지 않은 것 — 번들에도 없다
+      missing.push(name);
+      continue;
+    }
+    if (found.has(dir)) continue;
+    const pkg = readJson(path.join(dir, 'package.json'));
+    found.set(dir, pkg);
+    for (const dep of Object.keys(pkg.dependencies ?? {})) queue.push([dep, dir]);
+  }
+  return { packages: [...found].map(([dir, pkg]) => ({ dir, pkg })), missing };
+}
+
+function licenseText(dir) {
+  const files = fs.readdirSync(dir).filter((f) => LICENSE_FILE.test(f) && fs.statSync(path.join(dir, f)).isFile());
+  return files.sort().map((f) => fs.readFileSync(path.join(dir, f), 'utf8').trim()).join('\n\n');
+}
+
+function extraTexts(name, dir) {
+  const out = [];
+  for (const pattern of EXTRA[name] ?? []) {
+    const files = pattern.endsWith('/*')
+      ? fs.readdirSync(path.join(dir, pattern.slice(0, -2))).sort().map((f) => path.join(pattern.slice(0, -2), f))
+      : [pattern];
+    for (const rel of files) {
+      const file = path.join(dir, rel);
+      if (!fs.existsSync(file)) throw new Error(`EXTRA 고지 파일 없음: ${name}/${rel} — 패키지 버전이 바뀌었는지 확인`);
+      out.push(`--- ${name}/${rel.replace(/\\/g, '/')} ---\n\n${fs.readFileSync(file, 'utf8').trim()}`);
+    }
+  }
+  return out;
+}
+
+const { packages, missing } = collect();
+packages.sort((a, b) => a.pkg.name.localeCompare(b.pkg.name));
+
+const warnings = [];
+const byLicense = new Map();
+/** package.json 에 license 필드가 없을 때 라이선스 전문의 첫머리로 종류를 판별. */
+function detectLicense(text) {
+  if (/MIT License|Permission is hereby granted, free of charge/i.test(text)) return 'MIT';
+  if (/Apache License,?\s+Version 2\.0/i.test(text)) return 'Apache-2.0';
+  if (/ISC License/i.test(text)) return 'ISC';
+  return 'UNKNOWN';
+}
+
+const sections = packages.map(({ dir, pkg }) => {
+  let text = licenseText(dir);
+  const license = typeof pkg.license === 'string' ? pkg.license : pkg.license?.type ?? detectLicense(text);
+  byLicense.set(license, (byLicense.get(license) ?? 0) + 1);
+  if (license === 'UNKNOWN') warnings.push(`${pkg.name}@${pkg.version}: 라이선스 종류 판별 불가 — 직접 확인 필요`);
+  if (!text) {
+    warnings.push(`${pkg.name}@${pkg.version}: 라이선스 파일 없음 (package.json license=${license})`);
+    text = `(패키지에 라이선스 파일이 없음 — package.json license: ${license}${pkg.author ? `, author: ${typeof pkg.author === 'string' ? pkg.author : pkg.author.name}` : ''})`;
+  }
+  const repo = typeof pkg.repository === 'string' ? pkg.repository : pkg.repository?.url;
+  const head = [`${pkg.name}@${pkg.version}`, `License: ${license}`, repo ? `Source: ${repo.replace(/^git\+/, '')}` : null]
+    .filter(Boolean)
+    .join('\n');
+  return [head, text, ...extraTexts(pkg.name, dir)].join('\n\n');
+});
+
+const rule = '='.repeat(78);
+const summary = [...byLicense].sort((a, b) => b[1] - a[1]).map(([l, n]) => `${l} ${n}`).join(', ');
+const doc = [
+  'THIRD-PARTY SOFTWARE NOTICES',
+  '',
+  'This application includes the following third-party software.',
+  'Each component is listed with its license text as distributed by its authors.',
+  `Components: ${packages.length} (${summary})`,
+  'Generated by scripts/build-notices.mjs from the installed node_modules.',
+  '',
+  ...sections.flatMap((s) => [rule, s, '']),
+].join('\n');
+
+fs.mkdirSync(path.dirname(outFile), { recursive: true });
+fs.writeFileSync(outFile, doc.replace(/\r\n/g, '\n'));
+console.log(`[notices] ${path.relative(root, outFile)} — ${packages.length}개 패키지 (${summary}), ${Math.round(doc.length / 1024)}KB`);
+if (missing.length) console.log(`[notices] 미설치(선택 의존성 등, 제외): ${missing.join(', ')}`);
+for (const w of warnings) console.warn(`[notices] 경고: ${w}`);

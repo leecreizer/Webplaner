@@ -1,18 +1,22 @@
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useThree } from '@react-three/fiber';
 import {
+  Euler,
   Mesh,
   Object3D,
   PointLightHelper,
   SpotLightHelper,
   Vector3,
   type PointLight,
+  type RectAreaLight,
   type SpotLight,
 } from 'three';
+import { RectAreaLightHelper } from 'three/examples/jsm/helpers/RectAreaLightHelper.js';
 import { TransformControls } from '@react-three/drei';
 import { RectAreaLightUniformsLib } from 'three/examples/jsm/lights/RectAreaLightUniformsLib.js';
 import { useCustomLightStore, type CustomLight } from '@/engine/stores/customLightStore';
 import { useLightingStore, shadowMapSizeFor } from '@/engine/stores/lightingStore';
+import { isGizmoBusy, registerGizmo } from '@/features/models/gizmoGuard';
 
 // RectAreaLight 사용을 위해 한 번 초기화 (uniforms 등록)
 RectAreaLightUniformsLib.init();
@@ -46,6 +50,32 @@ function CustomLightInstance({ light: l, selected }: { light: CustomLight; selec
   const shadowQuality = useLightingStore((s) => s.shadowQuality);
   const mapSize = shadowMapSizeFor(shadowQuality);
   const markerRef = useRef<Mesh>(null);
+  const tcRef = useRef<{ axis: string | null; dragging: boolean } | null>(null);
+  // 사각 조명 기즈모 모드 — 홈플래너3 다른 기즈모와 같은 키(R 회전 · G/T 이동)
+  const [gizmoMode, setGizmoMode] = useState<'translate' | 'rotate'>('translate');
+  useEffect(() => {
+    if (!selected) return;
+    const onKey = (e: KeyboardEvent) => {
+      const tag = (e.target as HTMLElement | null)?.tagName;
+      if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return;
+      // 키 위치(code)로 — 한글 입력 상태면 e.key 가 ㄱ·ㅎ·ㅅ 으로 들어와 단축키가 안 먹었다
+      if (e.code === 'KeyR') setGizmoMode('rotate');
+      if (e.code === 'KeyG' || e.code === 'KeyT') setGizmoMode('translate');
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [selected]);
+  // 기즈모 가드 등록 — 손잡이 위·끄는 중엔 다른 물체 선택 금지
+  useEffect(() => {
+    if (!tcRef.current) return;
+    return registerGizmo(tcRef.current);
+  });
+  // 마커 회전 = 조명 회전(기즈모 회전 손잡이가 마커를 돌린다) — 모든 조명
+  useEffect(() => {
+    if (!markerRef.current) return;
+    const r = lightRotation(l);
+    markerRef.current.rotation.set(r[0], r[1], r[2]);
+  }, [l]);
 
   // store의 position 변경을 mesh에 동기화 (외부에서 position이 변경된 경우 — 예: 패널 슬라이더)
   useEffect(() => {
@@ -64,17 +94,10 @@ function CustomLightInstance({ light: l, selected }: { light: CustomLight; selec
         <PointLightInstance light={l} selected={selected} mapSize={mapSize} />
       )}
       {l.kind === 'spot' && <SpotWithTarget light={l} selected={selected} mapSize={mapSize} />}
-      {l.kind === 'rect' && (
-        <rectAreaLight
-          position={l.position}
-          color={l.color}
-          intensity={l.intensity}
-          width={l.width ?? 2}
-          height={l.height ?? 1}
-        />
-      )}
+      {l.kind === 'rect' && <RectLightInstance light={l} selected={selected} />}
       {l.kind === 'hemisphere' && (
         <hemisphereLight
+          position={hemiSkyDir(l)}
           color={l.color}
           groundColor={l.groundColor ?? '#404040'}
           intensity={l.intensity}
@@ -85,8 +108,11 @@ function CustomLightInstance({ light: l, selected }: { light: CustomLight; selec
       <mesh
         ref={markerRef}
         position={l.position}
+        userData={{ focusId: `light:${l.id}` }}
         onPointerDown={(e) => {
           if (e.button !== 0) return;
+          // 기즈모 핸들 조작 중이면 선택 가로채기 금지 (핸들 뒤 메시 오선택 방지)
+          if (isGizmoBusy()) return;
           e.stopPropagation();
           select(selected ? null : l.id);
         }}
@@ -102,19 +128,86 @@ function CustomLightInstance({ light: l, selected }: { light: CustomLight; selec
         <meshBasicMaterial color={markerColor} depthTest={false} transparent opacity={0.95} />
       </mesh>
 
-      {/* 선택 시 TransformControls (translate). 마커가 target. 드래그 종료 시 store 갱신. */}
+      {/* 선택 시 TransformControls. 마커가 target. R = 회전 · G/T = 이동 (모든 조명) */}
       {selected && markerRef.current && (
         <TransformControls
+          ref={tcRef as never}
+          key={`light-gizmo-${l.id}-${gizmoMode}`}
           object={markerRef.current}
-          mode="translate"
+          mode={gizmoMode}
+          space={gizmoMode === 'rotate' ? 'local' : 'world'}
           size={0.7}
           onObjectChange={() => {
-            const p = markerRef.current!.position;
-            update(l.id, { position: [p.x, p.y, p.z] });
+            const m = markerRef.current!;
+            if (gizmoMode === 'rotate') update(l.id, { rotation: [m.rotation.x, m.rotation.y, m.rotation.z] });
+            else update(l.id, { position: [m.position.x, m.position.y, m.position.z] });
           }}
         />
       )}
     </group>
+  );
+}
+
+/** 사각 조명 기본 방향 — 아래(-Y)를 향함. three RectAreaLight 는 자기 -Z 쪽으로 빛을 낸다 */
+const RECT_DOWN: [number, number, number] = [-Math.PI / 2, 0, 0];
+
+/**
+ * 조명 회전(라디안) — 값이 없으면 종류별 기본: 사각 아래 · 스포트는 target 쪽을 -Z 로 · 나머지 0.
+ * 패널 회전 슬라이더와 기즈모 마커가 같은 값을 쓴다.
+ */
+export function lightRotation(l: CustomLight): [number, number, number] {
+  if (l.rotation) return l.rotation;
+  if (l.kind === 'rect') return RECT_DOWN;
+  if (l.kind === 'spot' && l.target) {
+    // -Z 가 target 을 향하도록 — Object3D.lookAt 은 +Z 를 향하게 하므로 반대쪽 점을 본다
+    const o = new Object3D();
+    o.position.set(...l.position);
+    const t = new Vector3(...l.target);
+    o.lookAt(o.position.clone().multiplyScalar(2).sub(t));
+    return [o.rotation.x, o.rotation.y, o.rotation.z];
+  }
+  return [0, 0, 0];
+}
+
+/** 회전으로 정한 빛 방향(-Z) 단위 벡터 */
+function lightForward(l: CustomLight): Vector3 {
+  const [x, y, z] = lightRotation(l);
+  return new Vector3(0, 0, -1).applyEuler(new Euler(x, y, z));
+}
+
+/** 반구 조명의 하늘 방향 — three HemisphereLight 는 position 을 하늘 쪽 방향으로 쓴다. 기본 위(+Y)를 회전 */
+function hemiSkyDir(l: CustomLight): [number, number, number] {
+  const [x, y, z] = l.rotation ?? [0, 0, 0];
+  const v = new Vector3(0, 1, 0).applyEuler(new Euler(x, y, z));
+  return [v.x, v.y, v.z];
+}
+
+/**
+ * 사각(면) 조명 — 회전 포함. 선택하면 빛이 나가는 면을 보여 준다(RectAreaLightHelper).
+ * 예전엔 회전 값이 없어 늘 정면(수평)으로만 빛을 냈다(사용자 보고 「조명에 회전이 없네」).
+ */
+function RectLightInstance({ light: l, selected }: { light: CustomLight; selected: boolean }) {
+  const ref = useRef<RectAreaLight>(null);
+  const r = l.rotation ?? RECT_DOWN;
+  useEffect(() => {
+    if (!selected || !ref.current) return;
+    const helper = new RectAreaLightHelper(ref.current, '#22d3ee');
+    ref.current.add(helper);
+    return () => {
+      helper.removeFromParent();
+      helper.dispose();
+    };
+  }, [selected]);
+  return (
+    <rectAreaLight
+      ref={ref}
+      position={l.position}
+      rotation={r}
+      color={l.color}
+      intensity={l.intensity}
+      width={l.width ?? 2}
+      height={l.height ?? 1}
+    />
   );
 }
 
@@ -160,6 +253,7 @@ function PointLightInstance({
       distance={l.distance ?? 10}
       decay={l.decay ?? 2}
       castShadow={l.castShadow ?? false}
+      shadow-intensity={l.shadowIntensity ?? 1}
       shadow-mapSize={[mapSize, mapSize]}
       shadow-radius={l.shadowRadius ?? 4}
       shadow-blurSamples={Math.max(8, Math.min(50, Math.round((l.shadowRadius ?? 4) * 4)))}
@@ -187,9 +281,16 @@ function SpotWithTarget({
   const { scene } = useThree();
 
   useEffect(() => {
-    target.position.set(l.target?.[0] ?? 0, l.target?.[1] ?? 0, l.target?.[2] ?? 0);
+    if (l.rotation) {
+      // 회전이 있으면 그 방향으로 — 거리는 예전 target 거리(없으면 2m)
+      const p = new Vector3(...l.position);
+      const d = l.target ? Math.max(0.5, p.distanceTo(new Vector3(...l.target))) : 2;
+      target.position.copy(p.addScaledVector(lightForward(l), d));
+    } else {
+      target.position.set(l.target?.[0] ?? 0, l.target?.[1] ?? 0, l.target?.[2] ?? 0);
+    }
     target.updateMatrixWorld();
-  }, [l.target, target]);
+  }, [l, target]);
 
   // 선택 시 cone helper 시각화
   useEffect(() => {
@@ -228,6 +329,7 @@ function SpotWithTarget({
         angle={l.angle ?? Math.PI / 6}
         penumbra={l.penumbra ?? 0.4}
         castShadow={l.castShadow ?? false}
+        shadow-intensity={l.shadowIntensity ?? 1}
         target={target}
         // 전역 shadowQuality 따라 mapSize 1024~8192. PCFShadowMap 기준 큰 mapSize 가
         // 가장자리 계단을 줄이는 가장 큰 요소. blurSamples cap 25 → 50.

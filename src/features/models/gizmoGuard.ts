@@ -64,6 +64,12 @@ export function registerGizmo(g: GizmoLike): () => void {
   return () => active.delete(g);
 }
 
+/** 어떤 기즈모든 끄는 중(핸들 호버는 빼고) — 경로 추적이 물체 이동을 화면에 보여 줘야 할 때 */
+export function isGizmoDragging(): boolean {
+  for (const g of active) if (g.dragging) return true;
+  return false;
+}
+
 /** 어떤 기즈모든 핸들 호버/드래그 중 — 이때 씬 클릭 선택은 무시해야 한다. */
 export function isGizmoBusy(): boolean {
   for (const g of active) {
