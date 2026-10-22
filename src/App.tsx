@@ -10,6 +10,7 @@ import {
 } from '@react-three/drei';
 import { PCFShadowMap, ACESFilmicToneMapping, MOUSE, type PointLight } from 'three';
 import { ShadowDemand } from '@/engine/lighting/ShadowDemand';
+import { CameraMotionWatcher } from '@/engine/camera/CameraMotion';
 import { PlanScene } from '@/features/scene/PlanScene';
 import { WallDrawingTool } from '@/features/drawing/WallDrawingTool';
 import {
@@ -29,7 +30,7 @@ import { ImportedModels } from '@/features/models/ImportedModels';
 import { registerOrbitControls } from '@/features/models/gizmoGuard';
 import { DynamicSky } from '@/engine/lighting/DynamicSky';
 import { PathtracerRenderer } from '@/engine/pathtracer/PathtracerRenderer';
-import { MutracerRenderer } from '@/engine/pathtracer/MutracerRenderer';
+import { MutracerRenderer, usePathTracingActive } from '@/engine/pathtracer/MutracerRenderer';
 import { CustomLights } from '@/engine/lighting/CustomLights';
 import { EditTool } from '@/features/editing/EditTool';
 import { EditOverlay } from '@/features/editing/EditOverlay';
@@ -161,6 +162,7 @@ export default function App({
           <SceneLights />
           {/* 섀도맵 demand 렌더링 — 변화 있을 때만 재렌더 (드래그 끊김 해소) */}
           <ShadowDemand />
+          <CameraMotionWatcher />
           <GlassShadows />
           <Caustics />
           <SceneEnvironment />
@@ -232,25 +234,15 @@ function SceneBackground() {
 /** 2D/3D 카메라 전환. */
 function SceneCamera() {
   const viewMode = useViewStore((s) => s.viewMode);
-  if (viewMode === '2D') {
-    return (
-      <OrthographicCamera
-        makeDefault
-        position={[0, 25, 0]}
-        zoom={50}
-        near={0.1}
-        far={1000}
-      />
-    );
-  }
+  const cameraFov = useViewStore((s) => s.cameraFov);
+  const is2D = viewMode === '2D';
+  // 원근 카메라는 2D 에서도 없애지 않는다 — 경로 추적 엔진이 이 카메라에 묶여 있어, 바뀌면 엔진을 새로 만들었다
+  // (59C 준비 약 20초·그중 화면 멈춤 12초, 실측). 3D 로 돌아오면 보던 시점 그대로다
   return (
-    <PerspectiveCamera
-      makeDefault
-      position={[8, 8, 8]}
-      fov={50}
-      near={0.1}
-      far={1000}
-    />
+    <>
+      <PerspectiveCamera makeDefault={!is2D} position={[8, 8, 8]} fov={cameraFov} near={0.1} far={1000} />
+      {is2D && <OrthographicCamera makeDefault position={[0, 25, 0]} zoom={50} near={0.1} far={1000} />}
+    </>
   );
 }
 
@@ -414,7 +406,7 @@ function SceneGrid() {
   const cellColor = useViewStore((s) => s.gridCellColor);
   const sectionColor = useViewStore((s) => s.gridSectionColor);
   const opacity = useViewStore((s) => s.gridOpacity);
-  const ptEnabled = useLightingStore((s) => s.pathtracerEnabled || s.giMode === 'mutracer');
+  const ptEnabled = usePathTracingActive();
   if (!show || ptEnabled) return null;
   return (
     <Grid
@@ -468,7 +460,7 @@ function SyncRenderer({ exposure, toneMapping }: { exposure: number; toneMapping
 /** PCSS 소프트 그림자 게이트 — pcssEnabled && !pathtracer 일 때만 셰이더 패치 mount. */
 function PcssGate() {
   const enabled = useLightingStore((s) => s.pcssEnabled);
-  const ptEnabled = useLightingStore((s) => s.pathtracerEnabled || s.giMode === 'mutracer');
+  const ptEnabled = usePathTracingActive();
   const size = useLightingStore((s) => s.pcssSize);
   const samples = useLightingStore((s) => s.pcssSamples);
   if (!enabled || ptEnabled) return null;
@@ -476,7 +468,7 @@ function PcssGate() {
 }
 
 function PostFXGate() {
-  const ptEnabled = useLightingStore((s) => s.pathtracerEnabled || s.giMode === 'mutracer');
+  const ptEnabled = usePathTracingActive();
   if (ptEnabled) return null;
   return <PostFX />;
 }
@@ -487,7 +479,7 @@ function OrbitControlsConditional() {
   // path tracer 활성 시 damping OFF — 관성으로 마우스 놓은 뒤에도 ~1초 카메라가 계속
   // 움직여 path tracer 가 그동안 계속 reset → "정지 즉시 수렴" 이 안 됨. damping 끄면
   // 놓는 순간 카메라 정지 → 즉시 누적 시작.
-  const ptEnabled = useLightingStore((s) => s.pathtracerEnabled || s.giMode === 'mutracer');
+  const ptEnabled = usePathTracingActive();
   // 기즈모 드래그 도중 언마운트로 카메라 회전이 영구 정지하는 버그 방지 — OrbitControls 인스턴스를
   // gizmoGuard 에 등록해 두고, 기즈모 언마운트 가드(GizmoOrbitGuard)가 enabled 를 복구할 수 있게 한다.
   // ref 콜백으로 정확히 mount 시 등록 / unmount 시 해제(no-deps effect 는 인스턴스가 뒤섞임).

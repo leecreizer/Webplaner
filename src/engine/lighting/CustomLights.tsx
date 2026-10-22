@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useThree } from '@react-three/fiber';
 import {
   Euler,
@@ -10,9 +10,14 @@ import {
   type PointLight,
   type RectAreaLight,
   type SpotLight,
+  BufferGeometry,
+  ConeGeometry,
+  DoubleSide,
+  Float32BufferAttribute,
+  SphereGeometry,
 } from 'three';
 import { RectAreaLightHelper } from 'three/examples/jsm/helpers/RectAreaLightHelper.js';
-import { TransformControls } from '@react-three/drei';
+import { Line, TransformControls } from '@react-three/drei';
 import { RectAreaLightUniformsLib } from 'three/examples/jsm/lights/RectAreaLightUniformsLib.js';
 import { useCustomLightStore, type CustomLight } from '@/engine/stores/customLightStore';
 import { useLightingStore, shadowMapSizeFor } from '@/engine/stores/lightingStore';
@@ -51,8 +56,14 @@ function CustomLightInstance({ light: l, selected }: { light: CustomLight; selec
   const mapSize = shadowMapSizeFor(shadowQuality);
   const markerRef = useRef<Mesh>(null);
   const tcRef = useRef<{ axis: string | null; dragging: boolean } | null>(null);
-  // 사각 조명 기즈모 모드 — 홈플래너3 다른 기즈모와 같은 키(R 회전 · G/T 이동)
-  const [gizmoMode, setGizmoMode] = useState<'translate' | 'rotate'>('translate');
+  // 기즈모 모드 — 홈플래너3 다른 기즈모와 같은 키(R 회전 · G/T 이동), 편집 패널 버튼과 같은 값(저장소).
+  // 끝점(target)은 스포트만 — 비추는 점을 옮긴다. 다른 조명에선 이동으로 본다
+  const storeMode = useCustomLightStore((s) => s.gizmoMode);
+  const setGizmoMode = useCustomLightStore((s) => s.setGizmoMode);
+  const gizmoMode = storeMode === 'target' && l.kind !== 'spot' ? 'translate' : storeMode;
+  const targetRef = useRef<Mesh>(null);
+  // 스포트가 지금 비추는 점(회전이 있으면 그 방향·예전 거리, 없으면 target)
+  const aim = l.kind === 'spot' ? spotAim(l) : null;
   useEffect(() => {
     if (!selected) return;
     const onKey = (e: KeyboardEvent) => {
@@ -95,6 +106,8 @@ function CustomLightInstance({ light: l, selected }: { light: CustomLight; selec
       )}
       {l.kind === 'spot' && <SpotWithTarget light={l} selected={selected} mapSize={mapSize} />}
       {l.kind === 'rect' && <RectLightInstance light={l} selected={selected} />}
+      {/* 영역 표시 — 고른 조명만: 사각 = 퍼짐 각도로 벌어지는 사각뿔대, 스포트 = 콘, 점 = 구. 길이·반지름 = 도달 거리 */}
+      {selected && <LightReach light={l} />}
       {l.kind === 'hemisphere' && (
         <hemisphereLight
           position={hemiSkyDir(l)}
@@ -128,16 +141,41 @@ function CustomLightInstance({ light: l, selected }: { light: CustomLight; selec
         <meshBasicMaterial color={markerColor} depthTest={false} transparent opacity={0.95} />
       </mesh>
 
-      {/* 선택 시 TransformControls. 마커가 target. R = 회전 · G/T = 이동 (모든 조명) */}
-      {selected && markerRef.current && (
+      {/* 스포트 끝점 — 비추는 점과 이어 주는 선. 점을 누르거나 패널 「끝점」이면 기즈모가 이 점을 옮긴다 */}
+      {selected && aim && (
+        <>
+          <Line points={[l.position, aim]} color="#f472b6" lineWidth={1.5} dashed dashSize={0.1} gapSize={0.06} />
+          <mesh
+            ref={targetRef}
+            position={aim}
+            onPointerDown={(e) => {
+              if (e.button !== 0 || isGizmoBusy()) return;
+              e.stopPropagation();
+              setGizmoMode('target');
+            }}
+          >
+            <sphereGeometry args={[0.1, 12, 12]} />
+            <meshBasicMaterial color="#f472b6" depthTest={false} transparent opacity={0.95} />
+          </mesh>
+        </>
+      )}
+
+      {/* 선택 시 TransformControls. 마커가 대상(끝점 모드면 스포트 끝점). R = 회전 · G/T = 이동 (모든 조명) */}
+      {selected && markerRef.current && (gizmoMode !== 'target' || targetRef.current) && (
         <TransformControls
           ref={tcRef as never}
           key={`light-gizmo-${l.id}-${gizmoMode}`}
-          object={markerRef.current}
-          mode={gizmoMode}
+          object={gizmoMode === 'target' ? targetRef.current! : markerRef.current}
+          mode={gizmoMode === 'rotate' ? 'rotate' : 'translate'}
           space={gizmoMode === 'rotate' ? 'local' : 'world'}
           size={0.7}
           onObjectChange={() => {
+            if (gizmoMode === 'target') {
+              // 끝점을 옮기면 회전은 버리고 target 이 방향을 정한다
+              const t = targetRef.current!.position;
+              update(l.id, { target: [t.x, t.y, t.z], rotation: undefined });
+              return;
+            }
             const m = markerRef.current!;
             if (gizmoMode === 'rotate') update(l.id, { rotation: [m.rotation.x, m.rotation.y, m.rotation.z] });
             else update(l.id, { position: [m.position.x, m.position.y, m.position.z] });
@@ -169,6 +207,72 @@ export function lightRotation(l: CustomLight): [number, number, number] {
   return [0, 0, 0];
 }
 
+const REACH_FILL = { color: '#facc15', transparent: true, opacity: 0.07, depthWrite: false, side: DoubleSide } as const;
+const REACH_EDGE = '#facc15';
+const noRaycast = () => null;
+
+/**
+ * 조명 영역 표시(고른 조명만) — 퍼짐·도달 거리를 눈으로 본다.
+ * - 사각: 면에서 빛 방향(-Z)으로 퍼짐 각도(퍼짐 1 = 90°, 그리기는 80° 까지)만큼 벌어지는 사각뿔대, 길이 = 도달 거리(기본 3m)
+ * - 스포트: 콘 각도·도달 거리의 원뿔 · 점: 도달 거리 반지름의 구
+ * 경로 추적은 실제 빛처럼 거리 제곱으로 약해질 뿐 끊기지 않는다 — 도달 거리는 래스터의 끊는 거리이자 눈대중용 표시다
+ * 발광 재질(MeshBasic)이라 경로 추적 장면엔 안 들어가고 위에 덧그려진다. 클릭은 통과
+ */
+function LightReach({ light: l }: { light: CustomLight }) {
+  const L = l.distance && l.distance > 0 ? l.distance : 3;
+  const geo = useMemo(() => {
+    if (l.kind === 'rect') {
+      const w = (l.width ?? 2) / 2, h = (l.height ?? 1) / 2;
+      const ex = L * Math.tan((Math.min(80, (l.spread ?? 1) * 90) * Math.PI) / 180);
+      const W = w + ex, H = h + ex;
+      const n = [[-w, -h, 0], [w, -h, 0], [w, h, 0], [-w, h, 0]];
+      const f = [[-W, -H, -L], [W, -H, -L], [W, H, -L], [-W, H, -L]];
+      const pos: number[] = [];
+      const quad = (a: number[], b: number[], c: number[], d: number[]) => pos.push(...a, ...b, ...c, ...a, ...c, ...d);
+      for (let i = 0; i < 4; i++) quad(n[i], n[(i + 1) % 4], f[(i + 1) % 4], f[i]);
+      quad(f[0], f[1], f[2], f[3]);
+      const g = new BufferGeometry();
+      g.setAttribute('position', new Float32BufferAttribute(pos, 3));
+      const edges: [number, number, number][] = [];
+      for (let i = 0; i < 4; i++) edges.push(n[i] as never, f[i] as never, f[i] as never, f[(i + 1) % 4] as never);
+      return { fill: g, edges };
+    }
+    if (l.kind === 'spot') {
+      const r = L * Math.tan(l.angle ?? Math.PI / 6);
+      const g = new ConeGeometry(r, L, 48, 1, true);
+      g.translate(0, -L / 2, 0); // 꼭짓점을 원점(조명)에
+      g.rotateX(Math.PI / 2); // 밑면을 -Z(빛 방향)로
+      return { fill: g, edges: [] as [number, number, number][] };
+    }
+    if (l.kind === 'point') return { fill: new SphereGeometry(L, 32, 16), edges: [] as [number, number, number][] };
+    return null;
+  }, [l.kind, l.width, l.height, l.spread, l.angle, L]);
+  useEffect(() => () => geo?.fill.dispose(), [geo]);
+  if (!geo) return null;
+  const rot = l.kind === 'point' ? ([0, 0, 0] as [number, number, number]) : lightRotation(l);
+  return (
+    <group position={l.position} rotation={rot}>
+      <mesh geometry={geo.fill} raycast={noRaycast}>
+        <meshBasicMaterial {...REACH_FILL} />
+      </mesh>
+      {geo.edges.length > 0 && <Line points={geo.edges} segments color={REACH_EDGE} lineWidth={1} transparent opacity={0.8} />}
+      {l.kind === 'point' && (
+        <mesh geometry={geo.fill} raycast={noRaycast}>
+          <meshBasicMaterial color={REACH_EDGE} wireframe transparent opacity={0.15} depthWrite={false} />
+        </mesh>
+      )}
+    </group>
+  );
+}
+
+/** 스포트가 비추는 점 — 회전이 있으면 그 방향으로 예전 target 거리(없으면 2m), 없으면 target */
+export function spotAim(l: CustomLight): [number, number, number] {
+  if (!l.rotation) return l.target ?? [0, 0, 0];
+  const p = new Vector3(...l.position);
+  const d = l.target ? Math.max(0.5, p.distanceTo(new Vector3(...l.target))) : 2;
+  return p.addScaledVector(lightForward(l), d).toArray() as [number, number, number];
+}
+
 /** 회전으로 정한 빛 방향(-Z) 단위 벡터 */
 function lightForward(l: CustomLight): Vector3 {
   const [x, y, z] = lightRotation(l);
@@ -198,6 +302,14 @@ function RectLightInstance({ light: l, selected }: { light: CustomLight; selecte
       helper.dispose();
     };
   }, [selected]);
+  // 퍼짐 — three RectAreaLight 엔 없는 값이라 userData 로 경로 추적(MutracerRenderer convertLight)에 넘긴다.
+  // 경로 추적은 조명을 버전이 바뀔 때만 다시 변환하므로 값이 바뀔 때마다 버전을 올린다
+  useEffect(() => {
+    const o = ref.current;
+    if (!o) return;
+    o.userData.mutracerSpread = l.spread ?? 1;
+    o.userData.mutracerVersion = ((o.userData.mutracerVersion as number | undefined) ?? 0) + 1;
+  }, [l]);
   return (
     <rectAreaLight
       ref={ref}

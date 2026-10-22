@@ -34,6 +34,10 @@ export interface ViewState {
   /** 프레임 체크(초당 화면 수·프레임 시간·그리기 호출) 표시 — engine/debug/FrameMeter */
   showFrameMeter: boolean;
 
+  // ===== 카메라 ==============================================
+  /** 3D 원근 카메라 화각(세로, 도) — 조명·렌더 패널 「카메라」. 범위는 domain/camera/CameraFov DEFAULT_FOV_RANGE */
+  cameraFov: number;
+
   // ===== Setters =============================================
   setViewMode: (v: ViewMode) => void;
   setWallThickPreview: (v: number) => void;
@@ -46,6 +50,7 @@ export interface ViewState {
   setGridOpacity: (v: number) => void;
   setSceneBackgroundColor: (v: string) => void;
   setShowFrameMeter: (v: boolean) => void;
+  setCameraFov: (v: number) => void;
 }
 
 export const useViewStore = create<ViewState>((set) => ({
@@ -65,6 +70,8 @@ export const useViewStore = create<ViewState>((set) => ({
   // Homvue 이식 성능 작업 중이라 기본으로 켜 둔다(사용자 요청 2026-10-21) — ` 키나 패널에서 끈다
   showFrameMeter: true,
 
+  cameraFov: 50,
+
   setViewMode: (v) => set({ viewMode: v }),
   setWallThickPreview: (v) => set({ wallThickPreview: v }),
   setShowNodeMarkers: (v) => set({ showNodeMarkers: v }),
@@ -76,4 +83,5 @@ export const useViewStore = create<ViewState>((set) => ({
   setGridOpacity: (v) => set({ gridOpacity: v }),
   setSceneBackgroundColor: (v) => set({ sceneBackgroundColor: v }),
   setShowFrameMeter: (v) => set({ showFrameMeter: v }),
+  setCameraFov: (v) => set({ cameraFov: v }),
 }));

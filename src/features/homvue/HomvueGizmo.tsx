@@ -56,6 +56,18 @@ export function commitTarget(key: string) {
   useHomvueStore.getState().bumpEdit();
 }
 
+/** 원점이 물체 상자(바닥 평면 기준) 밖이면 상자 바닥면 가운데(월드), 안이면 null */
+function outsideOriginBase(obj: Object3D): Vector3 | null {
+  obj.updateWorldMatrix(true, true);
+  const box = new Box3().setFromObject(obj);
+  if (box.isEmpty()) return null;
+  const o = new Vector3().setFromMatrixPosition(obj.matrixWorld);
+  const m = 0.05;
+  const inside = o.x >= box.min.x - m && o.x <= box.max.x + m && o.z >= box.min.z - m && o.z <= box.max.z + m;
+  if (inside) return null;
+  return new Vector3((box.min.x + box.max.x) / 2, box.min.y, (box.min.z + box.max.z) / 2);
+}
+
 /** 상자 가운데에 놓는 손잡이 물체 — 움직이면 같은 만큼 대상 물체를 따라 움직인다(대상의 부모·React 소유는 그대로) */
 function makePivot(obj: Object3D, at?: Vector3): { pivot: Object3D; follow: () => void; dispose: () => void } | null {
   const parent = obj.parent;
@@ -84,7 +96,38 @@ function makePivot(obj: Object3D, at?: Vector3): { pivot: Object3D; follow: () =
 }
 
 /** 물체 key → 장면 물체 (HomvueApartment 가 등록) */
-export const homvueProductObjects = new Map<string, HomvueGizmoTarget>();
+/** 바뀌면 알려 주는 Map — 씬 트리가 등록·해제를 따라 다시 그린다(useSyncExternalStore) */
+class ObservableMap<K, V> extends Map<K, V> {
+  version = 0;
+  private listeners = new Set<() => void>();
+  private queued = false;
+  set(k: K, v: V): this {
+    super.set(k, v);
+    this.bump();
+    return this;
+  }
+  delete(k: K): boolean {
+    const had = super.delete(k);
+    if (had) this.bump();
+    return had;
+  }
+  /** 숨김처럼 Map 밖에서 바뀐 것도 알린다 */
+  bump() {
+    this.version++;
+    // 상품 수백 개가 한꺼번에 등록된다 — 알림은 한 번에 모아서
+    if (this.queued || !this.listeners) return;
+    this.queued = true;
+    queueMicrotask(() => {
+      this.queued = false;
+      for (const l of this.listeners) l();
+    });
+  }
+  subscribe = (fn: () => void) => {
+    this.listeners.add(fn);
+    return () => this.listeners.delete(fn);
+  };
+}
+export const homvueProductObjects = new ObservableMap<string, HomvueGizmoTarget>();
 /** 기즈모로 끄는 중 — 선택 상자를 숨긴다(놓을 때까지 옛 자리라) */
 export const homvueGizmoState = { dragging: false };
 // 화면 시험용 — 등록된 물체
@@ -100,7 +143,14 @@ export function HomvueGizmo() {
   const tc = useRef<{ axis: string | null; dragging: boolean } | null>(null);
   const entry = selected ? homvueProductObjects.get(selected) : undefined;
   const pivotAt = entry?.pivotAt;
-  const handle = useMemo(() => (entry?.centerPivot ? makePivot(entry.obj, pivotAt) : null), [entry, pivotAt]);
+  const handle = useMemo(() => {
+    if (!entry) return null;
+    if (entry.centerPivot) return makePivot(entry.obj, pivotAt);
+    // 원점이 물체 밖에 있는 상품 — 언리얼에서 모양을 방 좌표 그대로 넣고 액터를 (0,0,0)에 둔 붙박이장·드레스룸
+    // (59C S3 페어 웜코튼 4.5m · 스테이플러스 3.5m 떨어짐). 다른 상품처럼 바닥면 가운데에 손잡이를 둔다
+    const base = outsideOriginBase(entry.obj);
+    return base ? makePivot(entry.obj, base) : null;
+  }, [entry, pivotAt]);
   useEffect(() => () => handle?.dispose(), [handle]);
 
   // 물체가 늦게 등록될 수 있다(GLB 받는 중·옮긴 뒤 새 물체) — 잠깐 뒤 다시 본다

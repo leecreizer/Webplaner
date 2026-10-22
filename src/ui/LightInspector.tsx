@@ -1,4 +1,5 @@
 import { useCustomLightStore, type CustomLight } from '@/engine/stores/customLightStore';
+import { lightRotation } from '@/engine/lighting/CustomLights';
 import { DraggablePanel } from '@/ui/panels/DraggablePanel';
 
 /**
@@ -16,9 +17,23 @@ export function LightInspector() {
   const update = useCustomLightStore((s) => s.update);
   const remove = useCustomLightStore((s) => s.remove);
   const select = useCustomLightStore((s) => s.select);
+  const gizmoMode = useCustomLightStore((s) => s.gizmoMode);
+  const setGizmoMode = useCustomLightStore((s) => s.setGizmoMode);
 
   const light = lights.find((l) => l.id === selectedId);
   if (!light) return null;
+  // 회전(도) — 값이 없으면 종류별 기본(사각 아래·스포트 끝점 쪽). 입력하면 그 값으로 고정되고 기즈모 마커도 같이 돈다
+  const rotDeg = lightRotation(light).map((r) => Math.round(((r * 180) / Math.PI) * 10) / 10) as [number, number, number];
+  const setRot = (i: 0 | 1 | 2, deg: number) => {
+    const r = [...lightRotation(light)] as [number, number, number];
+    r[i] = (deg * Math.PI) / 180;
+    set({ rotation: r });
+  };
+  const modes: { m: 'translate' | 'rotate' | 'target'; label: string }[] = [
+    { m: 'translate', label: '이동' },
+    ...(light.kind !== 'point' ? [{ m: 'rotate' as const, label: '회전' }] : []),
+    ...(light.kind === 'spot' ? [{ m: 'target' as const, label: '끝점' }] : []),
+  ];
 
   const set = (patch: Partial<CustomLight>) => update(light.id, patch);
   const setPos = (i: 0 | 1 | 2, v: number) => {
@@ -29,7 +44,8 @@ export function LightInspector() {
   const setTarget = (i: 0 | 1 | 2, v: number) => {
     const t: [number, number, number] = light.target ? [...light.target] : [0, 0, 0];
     t[i] = v;
-    set({ target: t });
+    // 끝점을 직접 넣으면 회전은 버린다 — 회전이 있으면 그 방향이 끝점보다 앞선다(spotAim)
+    set({ target: t, rotation: undefined });
   };
 
   return (
@@ -52,13 +68,26 @@ export function LightInspector() {
         </>
       }
     >
+      <Section title="조작 (기즈모)">
+        <div style={{ display: 'flex', gap: 4 }}>
+          {modes.map(({ m, label }) => (
+            <button key={m} onClick={() => setGizmoMode(m)} style={modeBtnStyle(gizmoMode === m || (gizmoMode === 'target' && m === 'translate' && light.kind !== 'spot'))}>
+              {label}
+            </button>
+          ))}
+        </div>
+        <div style={{ fontSize: 10, opacity: 0.5, marginTop: 4 }}>
+          R = 회전 · G·T = 이동{light.kind === 'spot' ? ' · 분홍 점 = 끝점(비추는 곳)' : ''}
+        </div>
+      </Section>
+
       <Section title="공통">
         <ColorField label="색" value={light.color} onChange={(v) => set({ color: v })} />
         <NumberField
           label="강도"
           value={light.intensity}
           min={0}
-          max={light.kind === 'spot' ? 200 : light.kind === 'point' ? 100 : 20}
+          max={light.kind === 'spot' || light.kind === 'rect' ? 200 : light.kind === 'point' ? 100 : 20}
           step={0.1}
           onChange={(v) => set({ intensity: v })}
         />
@@ -66,6 +95,9 @@ export function LightInspector() {
 
       {(light.kind === 'point' || light.kind === 'spot') && (
         <Section title="감쇠 / 그림자">
+          <div style={{ fontSize: 10, opacity: 0.55, marginBottom: 4 }}>
+            거리·감쇠는 래스터에만 — 경로 추적은 실제 빛처럼 거리 제곱으로 약해진다{light.kind === 'spot' ? '(범위는 콘 각도로)' : ''}
+          </div>
           <NumberField
             label="거리(m)"
             value={light.distance ?? 10}
@@ -151,6 +183,24 @@ export function LightInspector() {
             step={0.05}
             onChange={(v) => set({ height: v })}
           />
+          <NumberField
+            label="퍼짐 (0 곧게 ~ 1 넓게)"
+            value={light.spread ?? 1}
+            min={0}
+            max={1}
+            step={0.02}
+            onChange={(v) => set({ spread: v })}
+          />
+          <div style={{ fontSize: 10, opacity: 0.55 }}>퍼짐은 경로 추적에만 — 작을수록 빛이 아래로 모여 좁은 영역만 밝힌다</div>
+          <NumberField
+            label="도달 거리(m, 표시)"
+            value={light.distance ?? 3}
+            min={0.2}
+            max={20}
+            step={0.1}
+            onChange={(v) => set({ distance: v })}
+          />
+          <div style={{ fontSize: 10, opacity: 0.55 }}>노란 영역 = 퍼짐 각도 × 도달 거리. 실제 빛은 거리 제곱으로 약해질 뿐 끊기지 않는다</div>
         </Section>
       )}
 
@@ -167,6 +217,12 @@ export function LightInspector() {
       {light.kind !== 'hemisphere' && (
         <Section title="위치">
           <Vec3Field label="position" value={light.position} onChange={(i, v) => setPos(i, v)} />
+        </Section>
+      )}
+
+      {light.kind !== 'point' && (
+        <Section title="회전 (°)">
+          <Vec3Field label={light.kind === 'spot' ? '빛 방향 (입력하면 끝점이 따라감)' : '회전'} value={rotDeg} step={5} onChange={(i, v) => setRot(i, v)} />
         </Section>
       )}
 
@@ -291,10 +347,12 @@ function Vec3Field({
   label,
   value,
   onChange,
+  step = 0.1,
 }: {
   label: string;
   value: readonly [number, number, number] | [number, number, number];
   onChange: (i: 0 | 1 | 2, v: number) => void;
+  step?: number;
 }) {
   return (
     <div style={{ marginBottom: 4 }}>
@@ -306,7 +364,7 @@ function Vec3Field({
             <input
               type="number"
               value={value[i]}
-              step={0.1}
+              step={step}
               onChange={(e) => { const v = parseFloat(e.target.value); if (!Number.isNaN(v)) onChange(i as 0 | 1 | 2, v); }}
               style={{ ...numInputStyle, width: '100%' }}
             />
@@ -318,6 +376,11 @@ function Vec3Field({
 }
 
 // ============ styles ============
+
+const modeBtnStyle = (on: boolean): React.CSSProperties => ({
+  flex: 1, padding: '5px 0', fontSize: 11, borderRadius: 3, cursor: 'pointer', border: '1px solid #3f3f46',
+  background: on ? '#fbbf24' : '#27272a', color: on ? '#0a0a0a' : '#e5e5e5', fontWeight: on ? 700 : 400,
+});
 
 const nameInputStyle: React.CSSProperties = {
   flex: 1,

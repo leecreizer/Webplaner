@@ -10,6 +10,11 @@ import { DraggablePanel } from '@/ui/panels/DraggablePanel';
 import { Wall } from '@/domain/structures/Wall';
 import { Space } from '@/domain/structures/Space';
 import { buildSpaces } from '@/domain/layout/SpaceBuilder';
+import { useEffect, useRef, useState, useSyncExternalStore } from 'react';
+import { homvueProductObjects } from '@/features/homvue/HomvueGizmo';
+import { useHomvueStore } from '@/features/homvue/homvueStore';
+import { useSpaceModuleStore } from '@/features/spaceModules/spaceModuleStore';
+import { requestShadowUpdate } from '@/engine/lighting/ShadowDemand';
 
 /**
  * 씬 트리 outliner — 모든 오브젝트 (벽 / 공간 / 가구 / 라이트) 목록.
@@ -68,8 +73,21 @@ export function SceneOutliner() {
     { kind: 'hemi', label: '◐ 헤미스피어 (Sky/Ground)', visible: hemiVisible },
   ];
 
+  // 화면에서 고른 것을 트리에서도 보이게 — 선택된 줄(data-selected)까지 스크롤
+  const bodyRef = useRef<HTMLDivElement>(null);
+  const homvueSelected = useHomvueStore((s) => s.selected);
+  const modules = useSpaceModuleStore((s) => s.modules);
+  const selectedModuleId = useSpaceModuleStore((s) => s.selectedId);
+  const selectionSig = `${selectedMeshKeys.join(',')}|${selectedLightId}|${selectedPlacedId}|${selectedModelId}|${selectedBuiltin}|${homvueSelected}|${selectedModuleId}`;
+  useEffect(() => {
+    // 묶음이 펼쳐진 뒤 그려지므로 한 프레임 뒤에
+    const id = requestAnimationFrame(() => bodyRef.current?.querySelector('[data-selected="true"]')?.scrollIntoView({ block: 'nearest' }));
+    return () => cancelAnimationFrame(id);
+  }, [selectionSig]);
+
   return (
     <DraggablePanel id="outliner" title="🌳 씬 트리" defaultX={16} defaultY={80} width={240} accent="#a3e635">
+      <div ref={bodyRef}>
       <Section title={`벽 (${walls.length})`}>
         {walls.length === 0 && <Empty />}
         {walls.map((w) => {
@@ -126,6 +144,20 @@ export function SceneOutliner() {
         })}
       </Section>
 
+      <Section title={`공간 모듈 (${modules.length})`}>
+        {modules.length === 0 && <Empty />}
+        {modules.map((md) => (
+          <Row
+            key={md.id}
+            label={`▦ ${md.name}`}
+            isSelected={selectedModuleId === md.id}
+            isHidden={false}
+            onSelect={() => useSpaceModuleStore.getState().select(selectedModuleId === md.id ? null : md.id)}
+            onDelete={() => useSpaceModuleStore.getState().remove(md.id)}
+          />
+        ))}
+      </Section>
+
       <Section title="기본 광원">
         {builtinList.map((b) => (
           <Row
@@ -173,6 +205,8 @@ export function SceneOutliner() {
         ))}
       </Section>
 
+      <HomvueSection />
+
       <Section title={`불러온 모델 (${importedModels.length})`}>
         {importedModels.length === 0 && <Empty />}
         {importedModels.map((mdl) => (
@@ -187,8 +221,90 @@ export function SceneOutliner() {
           />
         ))}
       </Section>
+      </div>
     </DraggablePanel>
   );
+}
+
+/**
+ * Homvue 평면에 놓인 것 — 집 구조(벽·천장·바닥) · 공용 · 방별 상품 · 조명. 기즈모 등록부(homvueProductObjects)를 그대로 읽는다.
+ * 누르면 선택(기즈모·편집 패널), 👁 는 숨김. 묶음은 접고 펴며 지금 있는 방만 펼쳐 시작한다(상품이 200개 넘는다)
+ */
+function HomvueSection() {
+  const plan = useHomvueStore((s) => s.plan);
+  const selected = useHomvueStore((s) => s.selected);
+  const currentRoom = useHomvueStore((s) => s.currentRoom);
+  useSyncExternalStore(homvueProductObjects.subscribe, () => homvueProductObjects.version);
+  const [open, setOpen] = useState<Record<string, boolean>>({});
+  // 화면에서 고른 물체의 묶음을 펼친다(접혀 있으면 트리에서 선택이 안 보였다)
+  useEffect(() => {
+    if (!selected) return;
+    const gid = groupOf(selected);
+    setOpen((o) => (o[gid] ? o : { ...o, [gid]: true }));
+  }, [selected]);
+  if (!plan) return null;
+
+  const roomLabel = new Map<string, string>();
+  for (const r of (plan.rooms ?? []) as { type?: string; label?: string }[]) if (r.type) roomLabel.set(r.type, r.label ?? r.type);
+  const groups = new Map<string, { title: string; room?: string; rows: { key: string; label: string; hidden: boolean }[] }>();
+  const add = (gid: string, title: string, room: string | undefined, key: string, label: string, hidden: boolean) => {
+    let g = groups.get(gid);
+    if (!g) groups.set(gid, (g = { title, room, rows: [] }));
+    g.rows.push({ key, label, hidden });
+  };
+  const titles: Record<string, string> = { '0part': '집 구조', '9light': '조명', '1base': '공용' };
+  for (const [key, e] of homvueProductObjects) {
+    const label = e.label ?? e.item?.product?.name ?? e.item?.blueprint.split('/').pop() ?? key;
+    const gid = groupOf(key);
+    const type = gid.startsWith('5') ? gid.slice(1) : undefined;
+    add(gid, titles[gid] ?? roomLabel.get(type!) ?? type ?? gid, type, key, label, !e.obj.visible);
+  }
+  const sorted = [...groups.entries()].sort(([a], [b]) => a.localeCompare(b));
+  const total = homvueProductObjects.size;
+  const isOpen = (gid: string, room?: string) => open[gid] ?? (!!room && !!currentRoom && currentRoom.startsWith(room));
+  const toggleHidden = (key: string) => {
+    const e = homvueProductObjects.get(key);
+    if (!e) return;
+    e.obj.visible = !e.obj.visible;
+    requestShadowUpdate();
+    homvueProductObjects.bump();
+  };
+
+  return (
+    <Section title={`Homvue 평면 (${total})`}>
+      {total === 0 && <Empty />}
+      {sorted.map(([gid, g]) => (
+        <div key={gid} style={spaceGroupStyle}>
+          <div
+            style={{ ...spaceTitleStyle, cursor: 'pointer', userSelect: 'none' }}
+            onClick={() => setOpen((o) => ({ ...o, [gid]: !isOpen(gid, g.room) }))}
+          >
+            {isOpen(gid, g.room) ? '▾' : '▸'} {g.title} ({g.rows.length})
+          </div>
+          {isOpen(gid, g.room) &&
+            g.rows.map((r) => (
+              <Row
+                key={r.key}
+                label={`└ ${r.label}`}
+                isSelected={selected === r.key}
+                isHidden={r.hidden}
+                onSelect={() => useHomvueStore.getState().select(selected === r.key ? null : r.key)}
+                onToggle={() => toggleHidden(r.key)}
+                indent
+              />
+            ))}
+        </div>
+      ))}
+    </Section>
+  );
+}
+
+/** 씬 트리 묶음 — 집 구조(part:) · 조명(light:) · 공용(base-) · 방(키 앞부분 Living01 등) */
+function groupOf(key: string): string {
+  if (key.startsWith('part:')) return '0part';
+  if (key.startsWith('light:')) return '9light';
+  if (key.startsWith('base-')) return '1base';
+  return `5${key.split('-')[0]}`;
 }
 
 function kindIcon(kind: string): string {
@@ -209,12 +325,14 @@ function Row({
   isHidden: boolean;
   /** Shift 키 여부 전달 — multi-select 분기용 (light row 는 무시) */
   onSelect: (shift?: boolean) => void;
-  onToggle: () => void;
+  /** 없으면 숨김 버튼을 그리지 않는다 */
+  onToggle?: () => void;
   onDelete?: () => void;
   indent?: boolean;
 }) {
   return (
     <div
+      data-selected={isSelected ? 'true' : undefined}
       style={{
         ...rowStyle,
         background: isSelected ? '#1e3a5f' : 'transparent',
@@ -234,13 +352,11 @@ function Row({
       >
         {label}
       </span>
-      <button
-        onClick={onToggle}
-        title={isHidden ? '표시' : '숨김'}
-        style={iconBtnStyle}
-      >
-        {isHidden ? '🚫' : '👁'}
-      </button>
+      {onToggle && (
+        <button onClick={onToggle} title={isHidden ? '표시' : '숨김'} style={iconBtnStyle}>
+          {isHidden ? '🚫' : '👁'}
+        </button>
+      )}
       {onDelete && (
         <button onClick={onDelete} title="삭제" style={delBtnStyle}>
           ✕

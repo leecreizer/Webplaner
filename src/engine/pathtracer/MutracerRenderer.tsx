@@ -1,9 +1,9 @@
-import { useEffect, useMemo } from 'react';
+import { useEffect, useMemo, useRef } from 'react';
 import { useFrame, useThree } from '@react-three/fiber';
 import type * as THREE from 'three';
-import { HalfFloatType, Vector2, WebGLRenderTarget } from 'three';
+import { HalfFloatType, Matrix4, Quaternion, Vector2, Vector3, WebGLRenderTarget } from 'three';
 import { OutputPass } from 'three/examples/jsm/postprocessing/OutputPass.js';
-import { Engine, RenderLoop, THREESync } from '@meimu/mutracer';
+import { Engine, RectLight, RenderLoop, THREESync } from '@meimu/mutracer';
 import { renderCausticsOverlay } from '@/engine/lighting/caustics/Caustics';
 import { useLightingStore } from '@/engine/stores/lightingStore';
 import { useMutracerStore } from '@/engine/stores/mutracerStore';
@@ -35,6 +35,7 @@ import { isGizmoDragging } from '@/features/models/gizmoGuard';
  */
 /** 편집 보조물을 그릴 three 레이어 — MuTracer 는 레이어를 보지 않으므로 서로 간섭 없음. */
 const OVERLAY_LAYER = 31;
+const _withDepth: THREE.Object3D[] = [];
 
 /** MuTracer 가 렌더하지 않고 r3f 가 위에 그릴 객체 — 위 「제외 대상」과 같은 판정. */
 function isOverlay(o: THREE.Object3D): boolean {
@@ -47,11 +48,27 @@ function isOverlay(o: THREE.Object3D): boolean {
   return mats.every((m) => (m as THREE.MeshBasicMaterial).isMeshBasicMaterial || (m as { isLineMaterial?: boolean }).isLineMaterial);
 }
 
+/**
+ * 경로 추적이 지금 화면을 그리는가 — 2D 도면에선 끈다(사용자 요청 2026-10-22). 그리드·PostFX·부드러운 그림자·카메라 관성처럼
+ * 「경로 추적이면 끄는」 래스터 기능의 기준. 2D 에서도 경로 추적 엔진은 없애지 않고 멈춰만 둔다(MutracerRenderer)
+ */
+export function usePathTracingActive(): boolean {
+  const pt = useLightingStore((s) => s.pathtracerEnabled);
+  const mutracer = useLightingStore((s) => s.giMode === 'mutracer');
+  const is2D = useViewStore((s) => s.viewMode === '2D');
+  return pt || (mutracer && !is2D);
+}
+
 export function MutracerRenderer() {
   const enabled = useLightingStore((s) => s.giMode === 'mutracer');
   // 하이브리드 켜고 끄기만 렌더 루프를 다시 만든다(미리보기 렌더는 만들 때만 정할 수 있다). 나머지 설정은 실행 중 반영
   const hybridMode = useMutracerStore((s) => s.mt.hybrid);
-  const { gl, scene, camera } = useThree();
+  const { gl, scene, camera: current } = useThree();
+  // 엔진은 원근 카메라에 묶는다 — 2D 에선 직교 카메라가 기본이 되는데, 그걸 따라가면 2D↔3D 마다 엔진을 새로 만들었다
+  // (59C 준비 약 20초). 원근 카메라는 2D 에서도 남아 있다(App SceneCamera)
+  const perspective = useRef(current);
+  if ((current as THREE.PerspectiveCamera).isPerspectiveCamera) perspective.current = current;
+  const camera = perspective.current;
 
   useEffect(() => {
     if (!enabled) return;
@@ -98,11 +115,36 @@ export function MutracerRenderer() {
       camera: camera as THREE.PerspectiveCamera,
       // isOverlay 와 같은 기준 — 여기서 빠진 것을 OverlayPass 가 위에 그린다
       // 커스틱 조각은 경로 추적 장면에 넣지 않는다 — 화면 위에 덧그린다(renderCausticsOverlay)
+      // 경로 추적이 못 그리는 재질(선 LineMaterial·셰이더·커스틱 조각)과 발광 보조물(MeshBasic)은 조용히 뺀다.
+      // undefined 로 두면 THREESync 가 매 프레임 장면을 훑을 때마다 물체째 console.warn 을 찍었다 — 벽 그리기 선이 있으면
+      // 프레임마다 수십 건(로그 26만 줄, 실측). 물체를 붙든 로그가 쌓이고 디버그 도구가 붙어 있으면 매번 직렬화한다
       convertMaterial: (m) =>
-        m.userData.causticPatch || (m as THREE.MeshBasicMaterial).isMeshBasicMaterial ? null : undefined,
+        m.userData.causticPatch ||
+        (m as THREE.MeshBasicMaterial).isMeshBasicMaterial ||
+        (!(m as THREE.MeshStandardMaterial).isMeshStandardMaterial && m.userData.mutracerShadowCatcher !== true)
+          ? null
+          : undefined,
       // 굴절·커스틱을 끈 유리(래스터는 반투명) — 경로 추적에선 얇은 투과 판으로 바꾼다.
       // 반투명(투명도)이면 그림자 광선이 투명도만큼 빠져 그림자가 거의 사라지는데, 투과 재질은 그림자 광선을 막아
       // 보통 그림자가 된다. 얇은 판이라 휘지 않고(굴절 없음) 유리 속을 오가지 않아 느려지지 않는다
+      // 사각 조명 퍼짐(spread) — three 에 없는 값이라 기본 변환은 늘 1(반구 전체)이다. 퍼짐을 정한 조명만 직접 만든다
+      // (CustomLights 가 userData.mutracerSpread 를 넣고 값이 바뀔 때마다 mutracerVersion 을 올린다 — 그때만 다시 부른다)
+      convertLight: (src) => {
+        const rl = src as THREE.RectAreaLight;
+        if (!rl.isRectAreaLight || rl.userData.mutracerSpread == null) return undefined;
+        rl.updateWorldMatrix(true, false);
+        const e = rl.matrixWorld.elements;
+        const q = rl.getWorldQuaternion(new Quaternion()).normalize();
+        const p = rl.getWorldPosition(new Vector3());
+        const light = new RectLight({
+          size: [rl.width * Math.hypot(e[0], e[1], e[2]), rl.height * Math.hypot(e[4], e[5], e[6])],
+          color: rl.color.toArray() as [number, number, number],
+          intensity: rl.intensity,
+          spread: rl.userData.mutracerSpread as number,
+        });
+        light.transform = new Matrix4().compose(p, q, new Vector3(1, 1, 1)).elements.slice();
+        return light;
+      },
       onMeshConverted: (mesh, source, group) => {
         const src = Array.isArray(source.material) ? source.material[group.materialIndex ?? 0] : source.material;
         const t = src?.userData.glassTranslucent as number | undefined;
@@ -119,19 +161,22 @@ export function MutracerRenderer() {
     // 디노이저가 있으니 256 spp 면 충분 — 1024 대비 완료가 약 4배 빠르다.
     // 미리보기 없음 — 카메라가 움직이는 동안과 첫 샘플 전에는 래스터를 보여 준다(OverlayPass, 하이브리드).
     // 경로 추적 미리보기는 이 장면에서 저해상도도 매끄럽지 않았고, 켠 직후엔 준비 8.5초 + 셰이더 7초 동안 검은 화면이었다.
-    // 하이브리드를 끄면(기본) 움직이는 동안 저해상도 경로 추적 미리보기 — 반사 2회·JNLM 매 샘플.
-    // 해상도는 프레임 시간 16ms 를 맞추도록 50% → 25% 까지 자동으로 낮춘다(손을 따라오는 게 우선, 멈추면 최종이 정리)
+    // 하이브리드를 끄면(기본) 움직이는 동안 저해상도 경로 추적 미리보기 — WebGPU 면 OIDN small 이 매 샘플 정리(아래 init).
     const loop = new RenderLoop(engine, {
       sync,
       preview: hybridMode
         ? false
         : {
-            resolutionScale: 0.5,
-            adaptiveResolution: { targetFrameMs: 16, minScale: 0.25 },
-            bounces: 2,
-            timeBudgetMs: 12,
+            // 해상도·시간 예산은 라이브러리 기본(50% → 12.5% 자동, 80ms) — MuTracer 데모와 같다. 예전 12ms·16ms 목표는
+            // 미리보기 샘플이 한 프레임 안에 안 끝나 노이즈 제거 전 날것이 자주 보였다
+            // 반사 4회 — 2회면 실내 조명 간접광이 덜 들어와 움직이는 동안 눈에 띄게 어두웠다(59C 거실 화면 밝기 73~81 ↔
+            // 4회 97~103, 실측)
+            bounces: 4,
             denoiser: { type: 'jnlm', schedule: 'every-sample' },
           },
+      // 움직이는 동안 매끄럽게(MuTracer 데모 「Live」 설정) — 미리보기 노이즈 제거가 끝날 때까지 다음 카메라를 반영하지
+      // 않아 화면에 나오는 모든 미리보기가 정리된 그림이다. 끄면(예전) 노이즈 제거가 끝나기 전에 날것 샘플이 나가 잡티투성이였다
+      coalesceSceneUpdates: true,
       // 수렴 속도: 기본(프레임당 1샘플, 21ms 예산)은 GPU 가 샘플 하나에 ~5ms 쓰고 나머지를 논다.
       // 프레임당 여러 샘플 + 50ms 예산 → 실측 2.2배(11.3 → 24.5 spp/s, 같은 장면·시점). 조작 중엔
       // 래스터가 화면을 맡아 반응성은 그대로이고, 화질 손해도 없다.
@@ -256,6 +301,7 @@ export function MutracerRenderer() {
       // 지금 카메라·장면의 경로 추적 샘플이 READY_SAMPLES 개 쌓였다 → 래스터에서 넘어간다.
       // 첫 샘플은 디노이저 결과가 샘플마다 크게 달라 바로 보여 주면 번쩍인다(사용자 보고 「깜빡임」)
       if (loop.samples >= useMutracerStore.getState().mt.readySamples) hybrid.ready = true;
+
       update();
     });
     const offError = engine.on('error', (e) => console.warn('[MuTracer] error', e));
@@ -276,9 +322,75 @@ export function MutracerRenderer() {
       })
       .catch((e) => console.warn('[MuTracer] init 실패', e));
 
+    // 단계식 해상도 — 멈춘 직후엔 1/2 해상도로 먼저 깨끗하게, 그다음 원래 해상도로 다듬는다.
+    // 화소가 1/4 이라 샘플이 4.4배 빨리 쌓인다(59C 거실 0.7 → 3.1 샘플/초, 실측). 원래 해상도로 바꾸면
+    // 첫 샘플까지 2~4초 흐린 미리보기로 돌아갔으므로, 원래 해상도에 HOLD_SAMPLES 개 쌓일 때까지 화면을 바꾸지 않는다.
+    // 움직이거나 장면이 바뀌면(샘플 수가 줄면) 붙잡기를 풀고 다시 1/2 부터
+    // 샘플이 적을수록 화면이 어둡다(드문 밝은 간접광 점이 표시에서 잘리고 디노이저가 지운다 — 59C 거실 원래 해상도
+    // 1·4·16·32 샘플 밝기 150·175·190·192, 실측). 4 샘플에 넘기면 「밝아졌다 다시 어두워짐」이 보여 1/2 해상도와 같은
+    // 샘플 수가 쌓일 때까지 붙잡는다
+    const HALF_SAMPLES = 16;
+    const HOLD_SAMPLES = 16;
+    const HOLD_MAX_MS = 20000;
+    const fin = loop.final;
+    let stage: 'half' | 'hold' | 'full' = 'full';
+    let holdSince = 0;
+    let lastFinal = 0;
+    let lastSize = '';
+    // 배율을 바꾸면 누적이 다음 틱에 처음부터 — 샘플 수가 바꾸기 전보다 줄어든(다시 시작된) 걸 본 뒤부터
+    // 「줄었다(= 장면 변경)」를 판단한다
+    let settling = false;
+    let switchFrom = 0;
+    const setScale = (v: number) => {
+      if (fin.resolutionScale === v) return;
+      fin.resolutionScale = v;
+      settling = true;
+      switchFrom = fin.samples;
+    };
+    const toHalf = () => {
+      stage = 'half';
+      setScale(0.5);
+    };
+    const progressive = (changing: boolean) => {
+      const { progressiveResolution, finalResolution } = useMutracerStore.getState().mt;
+      // 최종 해상도가 1/2 이하면 1/2 단계가 의미 없다 — 바로 최종으로
+      if (!progressiveResolution || finalResolution <= 0.5) {
+        stage = 'full';
+        setScale(finalResolution);
+        return;
+      }
+      if (stage !== 'half' && fin.resolutionScale !== finalResolution && fin.resolutionScale !== 0.5) setScale(finalResolution); // 패널에서 바꿈
+      const n = fin.samples;
+      if (settling) {
+        if (n === 0 || n < switchFrom) settling = false;
+        lastFinal = 0;
+      }
+      const dropped = !settling && n < lastFinal; // 장면이 바뀌어 처음부터
+      lastFinal = n;
+      // 창 크기가 바뀌면 캔버스가 지워진다 — 붙잡을 그림이 없으니 1/2 부터
+      const size = `${engine.display.canvas.width}x${engine.display.canvas.height}`;
+      const resized = size !== lastSize;
+      lastSize = size;
+      if (changing || resized || dropped) toHalf();
+      else if (stage === 'half' && !settling && n >= HALF_SAMPLES) {
+        stage = 'hold';
+        holdSince = performance.now();
+        setScale(finalResolution);
+      } else if (stage === 'hold' && !settling && (n >= HOLD_SAMPLES || performance.now() - holdSince > HOLD_MAX_MS)) stage = 'full';
+    };
+    const select = loop.select;
+    loop.select = (info) => {
+      progressive(info.changing);
+      return select(info);
+    };
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const looseLoop = loop as any;
+    const present = looseLoop._present.bind(loop) as (r: unknown) => boolean;
+    looseLoop._present = (r: unknown) => (stage === 'hold' && !(r === fin && fin.samples >= HOLD_SAMPLES) ? false : present(r));
+
     loop.start();
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    (window as any).__mutracer = { engine, sync, loop, hybrid, firstSampleMs: () => firstSampleMs };
+    (window as any).__mutracer = { engine, sync, loop, hybrid, firstSampleMs: () => firstSampleMs, stage: () => stage };
 
     return () => {
       hybrid.loop = null;
@@ -309,6 +421,7 @@ export function MutracerRenderer() {
 /** 래스터 ↔ 경로 추적 전환 상태 — 엔진 효과와 OverlayPass(매 프레임)가 함께 본다 */
 const hybrid = {
   loop: null as RenderLoop | null,
+
   /** 지금 카메라·장면의 경로 추적 화면이 나와 있다 */
   ready: false,
   /** 경로 추적 루프가 돌고 있다(움직이는 동안 멈춤) */
@@ -321,11 +434,15 @@ const hybrid = {
   fadeFrom: 0,
   /** 준비 중 래스터를 아껴 그릴 때 세는 프레임 */
   heldFrames: 0,
+  /** 2D 도면이라 경로 추적을 멈춰 두었다 */
+  paused2D: false,
 };
 // 전환 설정(정지 판정 stillMs · 넘어가기 전 샘플 readySamples · 겹쳐 바꾸기 fadeMs)은 mutracerStore.
 // 겹쳐 바꾸기: 래스터와 경로 추적은 밝기·색감이 달라(간접광 유무) 한 번에 바꾸면 멈출 때마다 깜빡여 보였다 —
 // 위에 있는 r3f 캔버스(마지막 래스터 그림)를 투명하게 걷어 아래 경로 추적 캔버스를 드러낸다.
 const _size = new Vector2();
+// 움직이는 동안 마지막 경로 추적 그림을 장면에 입혀 보이는 「화면 재사용(리프로젝션)」을 시험했다가 뺐다(2026-10-22, 사용자 판단).
+// 조금 돌릴 땐 깨끗했지만 사진 밖·새로 드러난 곳은 여전히 잡티였고, 장면을 한 번 더 그려 움직이는 동안 46 → 35fps
 const _lastCam = new Float64Array(16); // Float32 면 반올림 때문에 매번 다르게 보여 늘 움직이는 것으로 판정된다
 
 /**
@@ -356,6 +473,23 @@ function OverlayPass() {
   );
   useFrame(({ gl, scene, camera }) => {
     const now = performance.now();
+    // 2D 도면 — 경로 추적을 멈추고 화면은 래스터(PostFX)가 그린다. 엔진·쌓은 장면은 그대로 두고 3D 로 오면 이어 그린다
+    const is2D = useViewStore.getState().viewMode === '2D';
+    const mtCanvas = document.getElementById('mutracer-canvas');
+    if (is2D) {
+      if (hybrid.loop && !hybrid.paused2D) {
+        hybrid.loop.stop();
+        hybrid.paused2D = true;
+        if (mtCanvas) mtCanvas.style.visibility = 'hidden';
+        gl.domElement.style.opacity = '1';
+      }
+      return;
+    }
+    if (hybrid.paused2D) {
+      hybrid.paused2D = false;
+      if (mtCanvas) mtCanvas.style.visibility = '';
+      if (hybrid.loop && (useMutracerStore.getState().mt.hybrid ? hybrid.running : true)) hybrid.loop.start();
+    }
     // 카메라 행렬은 렌더할 때만 갱신된다 — 래스터 화면을 그대로 두고 그리지 않는 동안(경로 추적 준비 중·첫 샘플 전)엔
     // 궤도 카메라를 돌려도 행렬이 안 바뀌어 움직임을 못 알아채고 화면이 멈춰 있었다(사용자 보고 「바로바로 적용 안 됨」)
     camera.updateMatrixWorld();
@@ -371,6 +505,7 @@ function OverlayPass() {
     // 래스터를 매 프레임 그려 물체가 손을 따라 움직여 보이게 한다
     if (isGizmoDragging()) hybrid.lastMove = now;
     const moving = now - hybrid.lastMove < m.stillMs;
+
     const loop = hybrid.loop;
     // 하이브리드 끔 — 경로 추적이 움직이는 동안에도 미리보기로 화면을 맡는다(GI 유지). 래스터는 경로 추적
     // 그림이 아직 없을 때(평면을 연 직후·장면 준비·셰이더 컴파일 중)만 — 그 뒤엔 겹쳐 바꾸고 편집 보조물만 그린다
@@ -450,14 +585,20 @@ function OverlayPass() {
     // 프레임이 남고, 기즈모가 프레임마다 겹쳐 그려져 잔상(부채꼴)이 쌓인다.
     gl.setClearAlpha(0);
     gl.clear(true, true, true);
-    // 커스틱 — 경로 추적 화면 위에 더한다(장면 레이어로, 앞 물체에 가려지게)
+    // 커스틱·이동 지점 — 경로 추적 화면 위에 그리되 장면 깊이에 맞춰 앞 물체에 가려지게(userData.overlayDepth)
+    _withDepth.length = 0;
+    scene.traverseVisible((o) => {
+      if (o.userData.overlayDepth) _withDepth.push(o);
+    });
     camera.layers.mask = cameraMask;
-    renderCausticsOverlay(gl, scene, camera);
+    renderCausticsOverlay(gl, scene, camera, _withDepth);
     camera.layers.set(OVERLAY_LAYER);
     // 바로 위에서 직접 지웠다 — 자동 지우기가 켜져 있으면 방금 그린 커스틱을 지운다
     const autoClear = gl.autoClear;
     gl.autoClear = false;
+    for (const o of _withDepth) o.visible = false; // 위에서 이미 그렸다 — 나머지 보조물만 늘 위에
     gl.render(scene, camera);
+    for (const o of _withDepth) o.visible = true;
     gl.autoClear = autoClear;
     gl.setClearAlpha(clearAlpha);
     scene.userData.overlayPass = false;

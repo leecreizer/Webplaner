@@ -6,6 +6,7 @@ import {
   type ToneMappingMode,
 } from '@/engine/stores/lightingStore';
 import { useViewStore } from '@/engine/stores/viewStore';
+import { DEFAULT_FOV_RANGE } from '@/domain/camera/CameraFov';
 import { useMutracerStore } from '@/engine/stores/mutracerStore';
 import { NumberField } from '@/ui/NumberField';
 import { lightRotation } from '@/engine/lighting/CustomLights';
@@ -88,6 +89,10 @@ export function LightingPanel() {
 
           <Section title="씬 배경">
             <ColorRow label="배경 색" value={v.sceneBackgroundColor} onChange={v.setSceneBackgroundColor} />
+          </Section>
+
+          <Section title="카메라">
+            <Slider label="화각 (도)" min={DEFAULT_FOV_RANGE.minFov} max={DEFAULT_FOV_RANGE.maxFov} step={1} value={v.cameraFov} onChange={v.setCameraFov} />
           </Section>
 
           <Section title="성능 확인">
@@ -488,6 +493,13 @@ function MutracerSection() {
       {sub('해상도·성능')}
       <Slider label="렌더 해상도 (화면 ×)" min={1} max={2} step={0.05} value={l.mutracerRenderScale} onChange={l.setMutracerRenderScale} />
       <Slider label="프레임당 GPU 시간" unit="ms" min={4} max={100} step={1} value={mt.timeBudgetMs} onChange={(v) => setMt({ timeBudgetMs: v })} />
+      <Select
+        label="최종 해상도"
+        value={FINAL_RES_LABEL[mt.finalResolution] ?? '100%'}
+        options={FINAL_RES_OPTIONS}
+        onChange={(v) => setMt({ finalResolution: FINAL_RES_VALUE[v] })}
+      />
+      <Checkbox label="멈춘 직후 1/2 해상도로 먼저 (빨리 깨끗하게)" checked={mt.progressiveResolution} onChange={(v) => setMt({ progressiveResolution: v })} />
       <Checkbox label="프레임당 샘플 여러 개" checked={mt.multiSamplesPerFrame} onChange={(v) => setMt({ multiSamplesPerFrame: v })} />
       <Slider label="텍스처 예산" unit="MiB" min={256} max={4096} step={128} value={mt.textureBudgetMiB} onChange={(v) => setMt({ textureBudgetMiB: v })} />
       <Select label="가속 구조 만들기" value={mt.bvhBuilder} options={['builtin', 'tinybvh']} onChange={(v) => setMt({ bvhBuilder: v as typeof mt.bvhBuilder })} />
@@ -867,6 +879,14 @@ const removeBtnStyle: React.CSSProperties = {
   fontSize: 11,
 };
 /** 커스틱 — 유리를 지나 모인 빛(래스터·경로 추적 공통, Caustics) */
+/** 경로 추적 최종 해상도 — 75% 는 화소 56% 라 약 1.8배 빨리 깨끗해지고 조금 부드럽다 */
+const FINAL_RES_OPTIONS = ['100%', '75% (빠름)', '50% (가장 빠름)'] as const;
+const FINAL_RES_VALUE: Record<(typeof FINAL_RES_OPTIONS)[number], number> = { '100%': 1, '75% (빠름)': 0.75, '50% (가장 빠름)': 0.5 };
+const FINAL_RES_LABEL: Record<number, (typeof FINAL_RES_OPTIONS)[number]> = { 1: '100%', 0.75: '75% (빠름)', 0.5: '50% (가장 빠름)' };
+
+/** 커스틱을 만드는 조명 — 모든 조명은 실내 조명(스팟·점·면광)까지, 느리면 태양광만 */
+const CAUSTIC_LIGHTS = ['모든 조명', '태양광만 (빠름)'] as const;
+
 function CausticControls() {
   const mt = useMutracerStore((s) => s.mt);
   const setMt = useMutracerStore((s) => s.setMt);
@@ -875,6 +895,12 @@ function CausticControls() {
       <Checkbox label="커스틱 (유리 그림자 속 빛)" checked={mt.causticShadows} onChange={(v) => setMt({ causticShadows: v })} />
       {mt.causticShadows && (
         <>
+          <Select
+            label="커스틱 조명"
+            value={mt.causticSunOnly ? '태양광만 (빠름)' : '모든 조명'}
+            options={CAUSTIC_LIGHTS}
+            onChange={(v) => setMt({ causticSunOnly: v !== '모든 조명' })}
+          />
           <Slider label="커스틱 광자 수" min={20000} max={2000000} step={10000} value={mt.causticPhotons} onChange={(v) => setMt({ causticPhotons: v })} />
           <Slider label="커스틱 번짐" min={0} max={4} step={0.1} value={mt.causticBlur} onChange={(v) => setMt({ causticBlur: v })} />
           <Slider label="커스틱 세기" min={0} max={4} step={0.05} value={mt.causticStrength} onChange={(v) => setMt({ causticStrength: v })} />

@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { Euler, MathUtils } from 'three';
+import { Box3, Euler, MathUtils, Vector3, type Object3D } from 'three';
 import { DraggablePanel } from '@/ui/panels/DraggablePanel';
 import { ColorRow, NumberRow, Section, Vec3, closeBtnStyle, resetBtnStyle, rowStyle } from '@/ui/ModelInspector';
 import { useHomvueStore } from './homvueStore';
@@ -11,7 +11,8 @@ import type { HomvueLight } from './homvueAssets';
  * Homvue 편집 패널 — 고른 것(상품·집 부품·방 바닥·레벨 메시·언리얼 조명)의 위치·회전·크기와 재질·조명 값을 고친다.
  * - 기즈모 모드(이동·회전·크기)와 숫자 입력은 같은 물체를 움직인다 — 숫자를 고치면 기즈모를 놓은 것과 같은 길(commitTarget)로 저장
  * - 재질: 고칠 때 그 물체용으로 재질을 복제한다(같은 재질을 쓰는 다른 물체는 그대로). 「원래대로」로 되돌린다
- * - 조명: 언리얼 값(루멘·색·색온도·크기·각도)을 고친다. 위치·회전은 손잡이(기즈모)로
+ * - 조명: 언리얼 값(루멘·색·색온도·크기·각도)을 고친다. 위치·회전은 손잡이(기즈모)로.
+ *   조명 기구(상품)를 고르면 그 기구의 빛도 함께 보인다 — 언리얼 조명 이름이 기구 블루프린트 이름과 같다(BP_JL…)
  * 저장: 상품 위치는 평면 저장 파일(언리얼 FSaveData)에 들어간다. 재질·조명·부품 편집은 이번 화면에서만 유지
  */
 export function HomvueInspector() {
@@ -87,7 +88,14 @@ export function HomvueInspector() {
         </Section>
       )}
 
-      {isLight ? <LightSection index={Number(selected.slice(6))} /> : <MaterialSection objKey={selected} entry={entry} />}
+      {isLight ? (
+        <LightSection index={Number(selected.slice(6))} />
+      ) : (
+        <>
+          <FixtureLights objKey={selected} obj={obj} blueprint={entry.item?.blueprint} />
+          <MaterialSection objKey={selected} entry={entry} />
+        </>
+      )}
     </DraggablePanel>
   );
 }
@@ -130,8 +138,36 @@ const toHex = (c: [number, number, number, number] | [number, number, number] | 
   c ? `#${[c[0], c[1], c[2]].map((x) => Math.round(x).toString(16).padStart(2, '0')).join('')}` : '#ffffff';
 const fromHex = (h: string): [number, number, number] => [1, 3, 5].map((i) => parseInt(h.slice(i, i + 2), 16)) as [number, number, number];
 
+/**
+ * 조명 기구의 빛 — 화면에서 다운라이트·스탠드를 누르면 상품으로 골라져 빛 밝기를 고칠 곳이 없었다(빛 손잡이는 「조명 위치 표시」를
+ * 켜야 보인다). 언리얼 조명 이름(actor)이 기구 블루프린트 이름과 같으므로 이름이 같고 기구에서 1.5m 안의 빛을 짝짓는다
+ * (같은 기구가 여러 개면 가까운 것끼리). 이름이 맞는 게 없으면 기구 상자에서 30cm 안의 빛. 집 부품(천장 등)은 빛이 수십 개라 뺀다
+ */
+function FixtureLights({ objKey, obj, blueprint }: { objKey: string; obj: Object3D; blueprint?: string }) {
+  const lights = useHomvueStore((s) => s.plan?.base.lights);
+  if (!lights || objKey.startsWith('part:')) return null;
+  obj.updateWorldMatrix(true, true);
+  const box = new Box3().setFromObject(obj);
+  if (box.isEmpty()) return null;
+  const dist = (i: number) => {
+    const h = homvueProductObjects.get(`light:${i}`);
+    return h ? box.distanceToPoint(new Vector3().setFromMatrixPosition(h.obj.matrixWorld)) : Infinity;
+  };
+  const bp = blueprint?.split('/').pop();
+  let linked = bp ? lights.map((l, i) => ({ l, i })).filter(({ l, i }) => (l.actor === bp || l.actor.startsWith(`${bp}_`)) && dist(i) < 1.5) : [];
+  if (!linked.length) linked = lights.map((l, i) => ({ l, i })).filter(({ i }) => dist(i) < 0.3);
+  if (!linked.length) return null;
+  return (
+    <>
+      {linked.map(({ l, i }) => (
+        <LightSection key={i} index={i} title={`이 기구의 조명${linked.length > 1 ? ` · ${l.actor}` : ''}`} />
+      ))}
+    </>
+  );
+}
+
 /** 언리얼 조명 값 — 루멘·색·색온도·크기·각도 */
-function LightSection({ index }: { index: number }) {
+function LightSection({ index, title }: { index: number; title?: string }) {
   const base = useHomvueStore((s) => s.plan?.base.lights?.[index]);
   const edit = useHomvueStore((s) => s.lightEdits[index]);
   const setLightEdit = useHomvueStore((s) => s.setLightEdit);
@@ -140,7 +176,7 @@ function LightSection({ index }: { index: number }) {
   const set = (patch: Partial<HomvueLight>) => setLightEdit(index, patch);
   const maxLm = Math.max(50, (base.intensity ?? 10) * 20);
   return (
-    <Section title={`조명 (언리얼 ${l.units === 'lumens' ? '루멘' : l.units})`}>
+    <Section title={`${title ?? '조명'} (언리얼 ${l.units === 'lumens' ? '루멘' : l.units})`}>
       <NumberRow label="세기" value={l.intensity ?? 0} min={0} max={maxLm} step={0.5} onChange={(x) => set({ intensity: x })} />
       <ColorRow label="색" value={toHex(l.color as [number, number, number] | null)} onChange={(h) => set({ color: fromHex(h) })} />
       <label style={rowStyle}>

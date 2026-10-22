@@ -41,6 +41,10 @@ export interface CausticOptions {
   blur: number;
   /** 유리에서 이 거리(m)보다 먼 면은 받지 않는다 */
   reach?: number;
+  /** 태양(방향광)만 — 실내 조명까지 넣으면 느릴 때 고른다 */
+  sunOnly?: boolean;
+  /** 중간 단계 결과 — 마지막 단계는 done 으로 */
+  onProgress?: (patches: CausticPatch[]) => void;
 }
 
 export interface CausticPatch {
@@ -405,11 +409,27 @@ interface Source {
   rectArea?: number;
 }
 
-export function collectSources(scene: Object3D): Source[] {
+/**
+ * 장면에 켜져 있는 조명 — 래스터 성능 때문에 잠시 숨긴 조명(userData.rasterSkip, Homvue 조명 풀)도 실제 조명으로 센다.
+ * 숨김만 보고 빼면 래스터 모드에서 카메라에서 먼 실내 조명이 커스틱을 못 만들고, 카메라를 움직일 때마다 바뀌어 다시 계산했다
+ */
+export function liveLights(scene: Object3D, sunOnly = false): Light[] {
+  const out: Light[] = [];
+  scene.traverse((o) => {
+    if (!(o as Light).isLight) return;
+    if (sunOnly && !(o as DirectionalLight).isDirectionalLight) return;
+    if (!o.visible && !o.userData.rasterSkip) return;
+    for (let p = o.parent; p; p = p.parent) if (!p.visible) return;
+    out.push(o as Light);
+  });
+  return out;
+}
+
+export function collectSources(scene: Object3D, sunOnly = false): Source[] {
   const out: Source[] = [];
-  scene.traverseVisible((o) => {
+  for (const o of liveLights(scene, sunOnly)) {
     const l = o as Light & { isDirectionalLight?: boolean; isPointLight?: boolean; isSpotLight?: boolean; isRectAreaLight?: boolean };
-    if (!l.isLight || !(l.intensity > 0)) return;
+    if (!(l.intensity > 0)) continue;
     const pos = new Vector3().setFromMatrixPosition(l.matrixWorld);
     const color = l.color.clone();
     if (l.isDirectionalLight || l.isSpotLight) {
@@ -428,7 +448,7 @@ export function collectSources(scene: Object3D): Source[] {
       const dir = new Vector3(0, 0, -1).transformDirection(r.matrixWorld);
       out.push({ light: l, kind: 'point', pos, dir, color, intensity: r.intensity, rectArea: r.width * r.height });
     }
-  });
+  }
   return out;
 }
 
@@ -470,8 +490,11 @@ function boxNearRay(box: Box3, o: Vector3, d: Vector3, len: number, rad: number)
 export interface CausticJob {
   cancel(): void;
   done: Promise<CausticPatch[] | null>;
-  stats: { pairs: number; photons: number; deposits: number; ms: number };
+  stats: { pairs: number; photons: number; deposits: number; ms: number; stage: number };
 }
+
+/** 단계별 광자 몫 — 1/16 만에 첫 화면, 1/8·1/4·1/2·전체로 다듬는다 */
+const STAGES = [1 / 16, 1 / 16, 1 / 8, 1 / 4, 1 / 2];
 
 /**
  * 장면을 훑어 커스틱 조각을 만든다. 화면을 멈추지 않게 sliceMs 마다 쉬어 가며 계산한다(취소 가능).
@@ -479,36 +502,43 @@ export interface CausticJob {
  */
 export function startCausticJob(scene: Object3D, opt: CausticOptions, sliceMs = 8): CausticJob {
   let cancelled = false;
-  const stats = { pairs: 0, photons: 0, deposits: 0, ms: 0 };
+  const stats = { pairs: 0, photons: 0, deposits: 0, ms: 0, stage: 0 };
   const yieldFrame = () => new Promise<void>((r) => setTimeout(r, 0));
   const run = async (): Promise<CausticPatch[] | null> => {
     const t0 = performance.now();
     scene.updateMatrixWorld();
     const bodies = collectBodies(scene);
     const casters = bodies.filter((b) => b.glass);
-    const sources = collectSources(scene);
+    const sources = collectSources(scene, opt.sunOnly);
     if (!casters.length || !sources.length) return [];
     const maxReach = opt.reach ?? 2.5;
-    // (유리, 조명) 쌍 — 유리마다 그 자리를 밝히는 조명 중 센 것 4개(가장 센 것의 5% 이상).
-    // 광자는 쌍이 받는 빛(조도 × 유리 단면)에 비례해 나눈다 — 작은 컵·약한 조명에 광자를 낭비하지 않게
+    // (유리, 조명) 쌍 — 유리마다 그 자리를 밝히는 조명 중 센 것 8개(가장 센 것의 1% 이상).
+    // 예전엔 4개·5% 라 해가 있으면 실내 조명(언리얼 값이 작다)이 빠지거나 겨우 들어갔다
     const pairs: { caster: Body; sphere: Sphere; src: Source; energy: number }[] = [];
     for (const caster of casters) {
       const sphere = caster.box.getBoundingSphere(new Sphere());
       const ranked = sources.map((s) => ({ s, e: irradianceAt(s, sphere.center) })).filter((x) => x.e > 0).sort((a, b) => b.e - a.e);
       if (!ranked.length) continue;
       const area = Math.PI * sphere.radius ** 2 * caster.glass!.transmission;
-      for (const { s, e } of ranked.slice(0, 4)) if (e >= ranked[0].e * 0.05) pairs.push({ caster, sphere, src: s, energy: e * area });
+      for (const { s, e } of ranked.slice(0, 8)) if (e >= ranked[0].e * 0.01) pairs.push({ caster, sphere, src: s, energy: e * area });
     }
-    stats.pairs = pairs.length;
-    const totalEnergy = pairs.reduce((a, p) => a + p.energy, 0) || 1;
-    // 받는 빛이 전체의 0.2% 도 안 되는 쌍은 건너뛴다(보이지 않는다)
-    const used = pairs.filter((p) => p.energy >= totalEnergy * 0.002);
+    // 받는 빛이 전체의 0.2% 도 안 되는 쌍은 건너뛴다(보이지 않는다) — 집 전체면 쌍이 300개를 넘어 쌍마다 드는 준비만으로 느려진다
+    const all = pairs.reduce((a, p) => a + p.energy, 0) || 1;
+    const used = pairs.filter((p) => p.energy >= all * 0.002);
+    stats.pairs = used.length;
+    const totalEnergy = used.reduce((a, p) => a + p.energy, 0) || 1;
     const dep = new Deposits();
-    let slice = performance.now();
+    // 쌍마다 미리 — 광자 수·닿는 거리·관계있는 메시·BVH
+    interface Job { caster: Body; src: Source; c: Vector3; rad: number; perPair: number; local: Body[] }
+    const jobs: Job[] = [];
     for (const { caster, sphere, src, energy } of used) {
       const c = sphere.center;
       const rad = sphere.radius * 1.02;
-      const perPair = Math.round(Math.min(600000, Math.max(2000, (opt.photons * energy) / totalEnergy)));
+      if (src.kind !== 'dir' && src.pos.distanceTo(c) <= rad * 1.05) continue; // 조명이 유리 안
+      // 광자 — 절반은 쌍마다 고르게, 절반은 받는 빛에 비례. 세기에만 비례하면 약한 조명은 광자가 적어 무늬 대신 잡티만 남았다.
+      // 최소치(2만)는 고른 몫 안에서만 — 쌍마다 무조건 2만을 주면 집 전체(59C 298쌍)에서 600만 개·289초로 불어났다
+      const even = (opt.photons * 0.5) / used.length;
+      const perPair = Math.min(600000, Math.max(Math.min(20000, even * 2), even + (opt.photons * 0.5 * energy) / totalEnergy));
       // 커스틱이 닿는 거리 — 유리 크기의 8배(최소 0.6m, 최대 maxReach)
       const reach = Math.min(maxReach, Math.max(0.6, rad * 8));
       // 이 쌍에 관계있는 메시만 — 유리 둘레(reach 안)에서 받는 면 + 빛에서 유리까지 가는 길의 가림막
@@ -518,59 +548,77 @@ export function startCausticJob(scene: Object3D, opt: CausticOptions, sliceMs = 
       const local = bodies.filter((b) => b.box.intersectsBox(near) || boxNearRay(b.box, c, toLight, lightLen, rad));
       await prepareBvh(local.map((b) => b.geo));
       if (cancelled) return null;
-      slice = performance.now();
-      const s = Math.max(2, Math.round(Math.sqrt(perPair)));
-      const o = new Vector3();
-      const d = new Vector3();
-      if (src.kind === 'dir') {
-        // 빛 방향에 수직인 정사각형(유리 둘레)에서 고르게 — 광자 하나 = 정사각형 넓이/광자 수 만큼의 빛
-        const [e1, e2] = basis(src.dir);
-        const back = 200;
-        const flux = (src.intensity * (2 * rad) ** 2) / (s * s);
-        d.copy(src.dir);
-        for (let i = 0; i < s; i++) {
-          for (let j = 0; j < s; j++) {
-            const u = ((i + Math.random()) / s) * 2 - 1;
-            const v = ((j + Math.random()) / s) * 2 - 1;
-            o.copy(c).addScaledVector(e1, u * rad).addScaledVector(e2, v * rad).addScaledVector(src.dir, -back);
-            tracePhoton(local, caster, o, d, back + rad * 2, flux * src.color.r, flux * src.color.g, flux * src.color.b, dep);
-          }
-          if (performance.now() - slice > sliceMs) {
-            await yieldFrame();
-            if (cancelled) return null;
-            slice = performance.now();
-          }
-        }
-      } else {
-        // 조명 위치에서 유리를 감싸는 원뿔 안으로 고르게 — 광자 하나 = 세기 × 원뿔 입체각/광자 수
-        const D = src.pos.distanceTo(c);
-        if (D <= rad * 1.05) continue;
-        const axis = c.clone().sub(src.pos).normalize();
-        const cosMax = Math.sqrt(1 - (rad / D) ** 2);
-        const omega = 2 * Math.PI * (1 - cosMax);
-        const [e1, e2] = basis(axis);
-        for (let i = 0; i < s; i++) {
-          for (let j = 0; j < s; j++) {
-            const ct = 1 - ((i + Math.random()) / s) * (1 - cosMax);
-            const st = Math.sqrt(Math.max(0, 1 - ct * ct));
-            const ph = ((j + Math.random()) / s) * 2 * Math.PI;
-            d.copy(axis).multiplyScalar(ct).addScaledVector(e1, Math.cos(ph) * st).addScaledVector(e2, Math.sin(ph) * st).normalize();
-            const f = (intensityToward(src, d) * omega) / (s * s);
-            if (f <= 0) continue;
-            tracePhoton(local, caster, src.pos, d, D + rad * 2, f * src.color.r, f * src.color.g, f * src.color.b, dep);
-          }
-          if (performance.now() - slice > sliceMs) {
-            await yieldFrame();
-            if (cancelled) return null;
-            slice = performance.now();
-          }
-        }
-      }
-      stats.photons += s * s;
+      jobs.push({ caster, src, c, rad, perPair, local });
     }
-    stats.deposits = dep.count;
-    const patches = buildPatches(dep, opt.blur);
-    stats.ms = Math.round(performance.now() - t0);
+    // 단계마다 광자를 더 쏘아 쌓고 그때마다 화면에 낸다 — 처음엔 적은 광자로 빨리, 뒤로 갈수록 또렷하게.
+    // 단계 하나는 그 자체로 전체 빛의 추정이라 단계 몫(frac)만큼 담고, 낼 때 쌓인 몫(cum)으로 나눈다
+    let slice = performance.now();
+    let cum = 0;
+    let patches: CausticPatch[] = [];
+    for (const frac of STAGES) {
+      for (const { caster, src, c, rad, perPair, local } of jobs) {
+        const s = Math.max(2, Math.round(Math.sqrt(perPair * frac)));
+        const o = new Vector3();
+        const d = new Vector3();
+        if (src.kind === 'dir') {
+          // 빛 방향에 수직인 정사각형(유리 둘레)에서 고르게 — 광자 하나 = 정사각형 넓이/광자 수 만큼의 빛
+          const [e1, e2] = basis(src.dir);
+          const back = 200;
+          const flux = (frac * src.intensity * (2 * rad) ** 2) / (s * s);
+          d.copy(src.dir);
+          for (let i = 0; i < s; i++) {
+            for (let j = 0; j < s; j++) {
+              const u = ((i + Math.random()) / s) * 2 - 1;
+              const v = ((j + Math.random()) / s) * 2 - 1;
+              o.copy(c).addScaledVector(e1, u * rad).addScaledVector(e2, v * rad).addScaledVector(src.dir, -back);
+              tracePhoton(local, caster, o, d, back + rad * 2, flux * src.color.r, flux * src.color.g, flux * src.color.b, dep);
+            }
+            if (performance.now() - slice > sliceMs) {
+              await yieldFrame();
+              if (cancelled) return null;
+              slice = performance.now();
+            }
+          }
+        } else {
+          // 조명 위치에서 유리를 감싸는 원뿔 안으로 고르게 — 광자 하나 = 세기 × 원뿔 입체각/광자 수
+          const D = src.pos.distanceTo(c);
+          const axis = c.clone().sub(src.pos).normalize();
+          const cosMax = Math.sqrt(1 - (rad / D) ** 2);
+          const omega = 2 * Math.PI * (1 - cosMax);
+          const [e1, e2] = basis(axis);
+          for (let i = 0; i < s; i++) {
+            for (let j = 0; j < s; j++) {
+              const ct = 1 - ((i + Math.random()) / s) * (1 - cosMax);
+              const st = Math.sqrt(Math.max(0, 1 - ct * ct));
+              const ph = ((j + Math.random()) / s) * 2 * Math.PI;
+              d.copy(axis).multiplyScalar(ct).addScaledVector(e1, Math.cos(ph) * st).addScaledVector(e2, Math.sin(ph) * st).normalize();
+              const f = (frac * intensityToward(src, d) * omega) / (s * s);
+              if (f <= 0) continue;
+              tracePhoton(local, caster, src.pos, d, D + rad * 2, f * src.color.r, f * src.color.g, f * src.color.b, dep);
+            }
+            if (performance.now() - slice > sliceMs) {
+              await yieldFrame();
+              if (cancelled) return null;
+              slice = performance.now();
+            }
+          }
+        }
+        stats.photons += s * s;
+      }
+      cum += frac;
+      // 격자 칸 수도 광자에 맞춰 — 광자가 적을 때 칸을 잘게 나누면 점무늬 잡티만 보인다.
+      // 단 광자 비율의 제곱근만큼 줄이면 첫 화면(256칸)에서 빛줄기가 뭉개져 네제곱근으로(512칸부터)
+      patches = buildPatches(dep, opt.blur, 1 / cum, Math.round(MAX_CELLS * Math.sqrt(Math.sqrt(cum))), 1 / Math.sqrt(cum));
+      stats.deposits = dep.count;
+      stats.stage++;
+      stats.ms = Math.round(performance.now() - t0);
+      if (cum < 0.999) {
+        opt.onProgress?.(patches);
+        await yieldFrame();
+        if (cancelled) return null;
+        slice = performance.now();
+      }
+    }
     return patches;
   };
   const done = run().catch((e) => {
@@ -592,7 +640,7 @@ const MAX_CELLS = 1024;
 const MIN_CELL = 0.0025;
 
 /** 같은 메시·같은 면(방향·높이)끼리 모아 평면 조각마다 밝기 격자를 만든다 */
-export function buildPatches(dep: Deposits, blur: number): CausticPatch[] {
+export function buildPatches(dep: Deposits, blur: number, norm = 1, maxCells = MAX_CELLS, soften = 1): CausticPatch[] {
   interface Cluster { body: Body; n: Vector3; h: number; idx: number[]; energy: number }
   const clusters: Cluster[] = [];
   const p = new Vector3();
@@ -632,11 +680,11 @@ export function buildPatches(dep: Deposits, blur: number): CausticPatch[] {
     us.sort((x, y) => x[0] - y[0]);
     vs.sort((x, y) => x[0] - y[0]);
     const umin = q(us, 0.005), umax = q(us, 0.995), vmin = q(vs, 0.005), vmax = q(vs, 0.995);
-    const cell = Math.max(MIN_CELL, Math.max(umax - umin, vmax - vmin) / (MAX_CELLS - 16));
+    const cell = Math.max(MIN_CELL, Math.max(umax - umin, vmax - vmin) / (maxCells - 16));
     const margin = Math.ceil(blur * 3) + 2;
     const u0 = umin - margin * cell, v0 = vmin - margin * cell;
-    const cols = Math.min(MAX_CELLS, Math.ceil((umax - umin) / cell) + 2 * margin + 1);
-    const rows = Math.min(MAX_CELLS, Math.ceil((vmax - vmin) / cell) + 2 * margin + 1);
+    const cols = Math.min(maxCells, Math.ceil((umax - umin) / cell) + 2 * margin + 1);
+    const rows = Math.min(maxCells, Math.ceil((vmax - vmin) / cell) + 2 * margin + 1);
     let grid = new Float32Array(cols * rows * 3);
     // 쌍선형으로 나눠 담기 — 칸 경계 잡티를 줄인다
     for (const i of cl.idx) {
@@ -658,16 +706,17 @@ export function buildPatches(dep: Deposits, blur: number): CausticPatch[] {
     }
     if (blur > 0) grid = gaussian(grid, cols, rows, blur);
     // 빛 다발/넓이 = 조도, 확산면 밝기 = 조도 × 반사율 / π (반사율은 받을 때 곱했다)
-    const scale = 1 / (cell * cell * Math.PI);
+    const scale = norm / (cell * cell * Math.PI);
     let peak = 0;
     for (let k = 0; k < grid.length; k++) {
       grid[k] *= scale;
       if (grid[k] > peak) peak = grid[k];
     }
     // 약한 칸(가장 밝은 칸의 8% 미만)은 크게 흐린 값으로 — 광자가 드문 곳이라 점무늬 잡티로 보였다.
-    // 지우지 않고 펴기만 한다(유리를 지나 넓게 퍼진 빛도 실제 빛이다). 밝은 커스틱 선은 또렷하게 둔다
+    // 지우지 않고 펴기만 한다(유리를 지나 넓게 퍼진 빛도 실제 빛이다). 밝은 커스틱 선은 또렷하게 둔다.
+    // 광자가 적은 앞 단계(soften > 1)는 그 기준을 올려 더 많이 편다 — 빛줄기만 또렷하고 흰 점은 안 보이게
     const wide = gaussian(grid, cols, rows, Math.max(4, blur * 4));
-    const lo = peak * 0.02, hi = peak * 0.08;
+    const hi = peak * Math.min(0.4, 0.08 * soften), lo = hi / 4;
     for (let k = 0; k < grid.length; k += 3) {
       const m = Math.max(grid[k], grid[k + 1], grid[k + 2]);
       if (m >= hi) continue;

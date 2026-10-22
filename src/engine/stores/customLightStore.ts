@@ -38,6 +38,8 @@ export interface CustomLight {
   width?: number;
   /** RectAreaLight height(m). */
   height?: number;
+  /** 사각 조명 빛 퍼짐 — 0 곧게(평행) ~ 1 반구 전체. 경로 추적에만(래스터 RectAreaLight 엔 없는 값). 기본 1 */
+  spread?: number;
   /**
    * 회전(라디안, XYZ 오일러) — 모든 조명. 빛은 자기 -Z 쪽으로 나간다.
    * 사각: 없으면 아래([-π/2,0,0]) · 스포트: 있으면 target 대신 이 방향 · 반구: 하늘 방향(기본 위)을 기울임 · 점: 방향 없음(값만 저장)
@@ -60,6 +62,9 @@ export interface CustomLightState {
   lights: CustomLight[];
   /** 현재 선택된 라이트 id (편집 패널 노출용). */
   selectedId: string | null;
+  /** 기즈모 모드 — 이동 · 회전 · 끝점(스포트가 비추는 점을 옮긴다). 편집 패널 버튼과 R·G·T 키가 같이 쓴다 */
+  gizmoMode: 'translate' | 'rotate' | 'target';
+  setGizmoMode: (m: 'translate' | 'rotate' | 'target') => void;
 
   add: (kind: LightKind) => string;
   remove: (id: string) => void;
@@ -123,6 +128,8 @@ function defaultsFor(kind: LightKind): Omit<CustomLight, 'id' | 'name'> {
 export const useCustomLightStore = create<CustomLightState>((set) => ({
   lights: [],
   selectedId: null,
+  gizmoMode: 'translate',
+  setGizmoMode: (gizmoMode) => set({ gizmoMode }),
 
   add: (kind) => {
     const id = `light-${++_seq}`;

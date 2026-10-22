@@ -8,6 +8,7 @@ import {
   Group,
   Matrix4,
   Mesh as ThreeMesh,
+  type BufferAttribute,
   type BufferGeometry,
   MeshStandardMaterial,
   PerspectiveCamera,
@@ -26,7 +27,8 @@ import { useHomvueStore } from './homvueStore';
 import { useLightingStore } from '@/engine/stores/lightingStore';
 import { isCeiling, placedProducts, sameDotSpace, showableProducts, type PlacedItem, type PlanData } from './homvueAssets';
 import { ueTransformToMatrix } from './ueTransform';
-import { HomvueTravelPoints } from './HomvueTravelPoints';
+import { HomvueTravelPoints, dotHidden as dotOccluded } from './HomvueTravelPoints';
+import { useCameraMotionStore } from '@/engine/camera/CameraMotion';
 import { HomvueGizmo, homvueGizmoState, homvueProductObjects, type HomvueGizmoTarget } from './HomvueGizmo';
 import { isGizmoBusy } from '@/features/models/gizmoGuard';
 import { HomvueLights } from './HomvueLights';
@@ -813,7 +815,16 @@ function mergeByMaterial(root: Object3D): Object3D {
       return;
     }
     const geo = m.geometry;
-    const key = [m.material.uuid, m.userData.homvueCeiling ? 'c' : '', geo.index ? 'i' : '', Object.keys(geo.attributes).sort().join(',')].join('|');
+    // 정점 속성 형식(배열 종류·정규화·GPU 형식)까지 같아야 합쳐진다 — Draco 로 압축된 메시와 압축이 안 된 메시가 섞이면
+    // 형식이 달라 합치기가 실패했다(압축 GLB 실측)
+    const attrSig = Object.keys(geo.attributes)
+      .sort()
+      .map((n) => {
+        const a = geo.attributes[n] as BufferAttribute;
+        return `${n}:${a.array.constructor.name}:${a.itemSize}:${a.normalized ? 1 : 0}:${a.gpuType}`;
+      })
+      .join(',');
+    const key = [m.material.uuid, m.userData.homvueCeiling ? 'c' : '', geo.index ? 'i' : '', attrSig].join('|');
     let g = groups.get(key);
     if (!g) groups.set(key, (g = { mat: m.material, ceiling: !!m.userData.homvueCeiling, geos: [], sources: [] }));
     const local = new Matrix4().multiplyMatrices(inv, m.matrixWorld);
@@ -828,7 +839,13 @@ function mergeByMaterial(root: Object3D): Object3D {
   out.matrix.copy(root.matrix);
   for (const { mat, ceiling, geos, sources } of groups.values()) {
     const merged = geos.length === 1 ? geos[0] : mergeGeometries(geos, false);
-    if (!merged) continue;
+    if (!merged) {
+      // 그래도 못 합치면 버리지 않고 원래 메시를 따로 둔다(예전엔 그 묶음이 통째로 빠졌다)
+      console.warn('[Homvue] 레벨 메시 합치기 실패 — 따로 둔다', sources.length);
+      for (const s of sources) keep.push(s.src);
+      for (const x of geos) x.dispose();
+      continue;
+    }
     if (geos.length > 1) for (const x of geos) x.dispose();
     merged.computeBoundingBox();
     merged.computeBoundingSphere();
@@ -856,16 +873,20 @@ const stopDown = (e: ThreeEvent<PointerEvent>) => {
 };
 
 /** 투어 점은 항상 위에 그려지므로(언리얼 화면 UI 점과 같게) 점이 함께 맞았으면 점에 양보한다 */
+/** 함께 맞은 이동 지점에 클릭을 양보할지 — 그 점이 이 물체에 가려져 있지 않을 때만(가려진 점은 안 보인다) */
 function yieldsToDot(e: ThreeEvent<MouseEvent | PointerEvent>): boolean {
-  return e.intersections.some((i) => {
+  const hit = e.intersections.some((i) => {
     for (let o: Object3D | null = i.object; o; o = o.parent) if (o.userData?.homvueDot) return true;
     return false;
   });
+  return hit && !dotOccluded(e);
 }
 
 /** 상품 하나 — 같은 GLB 가 여러 번 놓이면(다운라이트 등) 캐시된 원본을 복제해 쓴다.
  *  누르면 선택 — 끌어서 둘러보던 손을 뗀 것(4px 넘게 움직임)은 선택으로 치지 않는다. */
 function PlacedProduct({ pkey, item, baked, selected, dot }: { pkey: string; item: PlacedItem; baked: string | null; selected: boolean; dot: boolean }) {
+  // 상품 정보 점은 카메라를 움직이거나 돌리는 동안 숨긴다(사용자 요청 2026-10-22) — 점이 있는 상품만 이 값에 반응해 다시 그린다
+  const dotHidden = useCameraMotionStore((s) => dot && s.moving);
   const g = useGLTF(item.glb!, DRACO) as unknown as { scene: Object3D };
   const obj = useMemo(() => prepare(g.scene.clone(true), item), [g, item]);
   // 기즈모가 붙을 물체 등록 — 옮기면 item 이 바뀌어 새 물체가 다시 등록된다. Z 키 맞추기(FocusSelection)용 표식도
@@ -898,7 +919,7 @@ function PlacedProduct({ pkey, item, baked, selected, dot }: { pkey: string; ite
         </Suspense>
       )}
       {selected && <box3Helper args={[box, 0xfacc15]} />}
-      {dot && (
+      {dot && !dotHidden && (
         <Html position={[(box.min.x + box.max.x) / 2, box.max.y + 0.08, (box.min.z + box.max.z) / 2]} center zIndexRange={[15, 0]}>
           <button
             data-homvue-dot={pkey}

@@ -33,6 +33,10 @@ export interface MtSettings {
   bevelSamples: number;
 
   // ===== 성능 =====
+  /** 단계식 해상도 — 멈춘 직후 1/2 해상도로 먼저 깨끗하게(샘플 4배 빠름), 16샘플 뒤 원래 해상도로 다듬는다 */
+  progressiveResolution: boolean;
+  /** 최종 해상도(캔버스 대비) — 1 = 원래. 0.75 면 화소 56% 라 약 1.8배 빨리 깨끗해지고 조금 부드럽다. 0.5 면 단계식 없이 바로 */
+  finalResolution: number;
   /** 프레임당 그래픽 카드 시간(ms) — 크면 빨리 수렴, 작으면 다시 움직일 때 반응이 빠르다 */
   timeBudgetMs: number;
   /** 한 프레임에 샘플 여러 개 — 켜면 수렴이 빠르지만 움직이기 시작할 때 멈칫할 수 있다 */
@@ -60,6 +64,8 @@ export interface MtSettings {
   causticBlur: number;
   /** 커스틱 세기 배율 — 1 이 물리값 */
   causticStrength: number;
+  /** 커스틱을 태양으로만 — 끄면 실내 조명(스팟·점·면광)까지. 모든 조명이 느리면 켠다 */
+  causticSunOnly: boolean;
 
   // ===== 화면 표시 (경로 추적 화면에만) =====
   contrast: number;
@@ -103,6 +109,8 @@ export const MT_DEFAULTS: MtSettings = {
   bevel: true,
   bevelSamples: 8,
 
+  progressiveResolution: true,
+  finalResolution: 1,
   timeBudgetMs: 33,
   multiSamplesPerFrame: false,
   textureBudgetMiB: 1536,
@@ -119,6 +127,7 @@ export const MT_DEFAULTS: MtSettings = {
   causticPhotons: 400000,
   causticBlur: 2,
   causticStrength: 1,
+  causticSunOnly: false,
 
   contrast: 1,
   saturation: 1,

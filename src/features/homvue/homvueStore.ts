@@ -124,7 +124,8 @@ export const useHomvueStore = create<HomvueState>((set) => ({
   listError: null,
   plan: null,
   modules: {},
-  showCeiling: false,
+  // 천장 표시 — 기본 켬(평면을 열 때마다 켠 상태로 시작)
+  showCeiling: true,
   loadState: 'idle',
   loadError: null,
   offset: [0, 0, 0],
@@ -154,7 +155,7 @@ export const useHomvueStore = create<HomvueState>((set) => ({
   setPlans: (plans) => set({ plans, listError: null }),
   setListError: (listError) => set({ listError }),
   openPlan: async (id, saved) => {
-    set({ loadState: 'loading', loadError: null });
+    set({ loadState: 'loading', loadError: null, showCeiling: true });
     try {
       // 재질 값은 조립(prepare) 때 바로 쓰이므로 평면보다 먼저 받아 둔다
       const [plan, matParams] = await Promise.all([fetchPlan(id), useHomvueStore.getState().matParams ?? fetchMaterialParams()]);

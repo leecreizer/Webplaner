@@ -23,7 +23,7 @@ import {
 } from 'three';
 import { useMutracerStore } from '@/engine/stores/mutracerStore';
 import { isGizmoDragging } from '@/features/models/gizmoGuard';
-import { startCausticJob, type CausticJob, type CausticPatch } from './causticTrace';
+import { liveLights, startCausticJob, type CausticJob, type CausticPatch } from './causticTrace';
 
 /**
  * 커스틱 — 유리를 지나 휘어 모인 빛을 바닥·벽에 더한다(causticTrace 광자 추적 결과).
@@ -135,13 +135,14 @@ const _hidden: Object3D[] = [];
  * 경로 추적 화면 위에 커스틱을 덧그린다(MutracerRenderer 덧그리기 단계에서 화면을 지운 직후 부른다).
  * 1) 물체의 깊이만 그린다 — 유리도 넣는다(빼면 유리 몸체 위에 커스틱이 덧칠돼 하얗게 떠 보였다, 실측).
  *    편집 보조물(발광 재질·선)과 거의 투명한 판(클릭용 바닥판 등)만 뺀다
- * 2) 커스틱 조각을 깊이 비교해 더하기 혼합으로 그린다
+ * 2) 커스틱 조각을 깊이 비교해 더하기 혼합으로 그린다. withDepth(이동 지점처럼 가려져야 하는 덧그림)도 여기서 깊이 비교로
  * 3) 깊이를 지운다 — 뒤이어 그리는 기즈모·선택 상자는 예전처럼 늘 보이게
- * 커스틱 조각이 없으면 아무것도 하지 않는다(깊이 그리기 비용도 없음).
+ * 커스틱 조각도 withDepth 도 없으면 아무것도 하지 않는다(깊이 그리기 비용도 없음).
  */
-export function renderCausticsOverlay(gl: WebGLRenderer, scene: Scene, camera: Camera) {
+export function renderCausticsOverlay(gl: WebGLRenderer, scene: Scene, camera: Camera, withDepth: Object3D[] = []) {
   const group = scene.getObjectByName('caustics');
-  if (!group || !group.visible || !group.children.length) return;
+  const caustics = !!group && group.visible && group.children.length > 0;
+  if (!caustics && !withDepth.length) return;
   scene.traverseVisible((o) => {
     if (o === group) return;
     const any = o as Object3D & { isLine?: boolean; isPoints?: boolean; isSprite?: boolean; isMesh?: boolean; material?: Material | Material[] };
@@ -154,7 +155,7 @@ export function renderCausticsOverlay(gl: WebGLRenderer, scene: Scene, camera: C
     const nearlyClear = m.transparent && m.opacity < 0.5 && m.userData.glassTranslucent == null;
     if (m.isMeshBasicMaterial || m.isShaderMaterial || nearlyClear) _hidden.push(o);
   });
-  group.visible = false;
+  if (group) group.visible = false;
   for (const o of _hidden) o.visible = false;
   const autoClear = gl.autoClear;
   const override = scene.overrideMaterial;
@@ -167,8 +168,13 @@ export function renderCausticsOverlay(gl: WebGLRenderer, scene: Scene, camera: C
   scene.background = background;
   for (const o of _hidden) o.visible = true;
   _hidden.length = 0;
-  group.visible = true;
-  gl.render(group, camera);
+  if (group) group.visible = true;
+  if (caustics) gl.render(group!, camera);
+  // 깊이를 맞춰 그릴 덧그림(이동 지점 등) — 가구에 가려지면 가려진 대로
+  const mask = camera.layers.mask;
+  camera.layers.enableAll();
+  for (const o of withDepth) gl.render(o, camera);
+  camera.layers.mask = mask;
   gl.clearDepth();
   gl.autoClear = autoClear;
 }
@@ -186,20 +192,14 @@ function isSolid(m: Mesh): boolean {
  */
 const REACH = 2.5;
 const _sphere = new Sphere();
-function signature(scene: Object3D): string {
+function signature(scene: Object3D, sunOnly: boolean): string {
   const parts: string[] = [];
   const glass: Sphere[] = [];
   const solids: Mesh[] = [];
   scene.traverseVisible((o) => {
     if (o.userData.causticPatch) return;
     const l = o as Object3D & { isLight?: boolean; intensity?: number; angle?: number; penumbra?: number; color?: { getHex(): number } };
-    if (l.isLight) {
-      const e = o.matrixWorld.elements;
-      parts.push(`L${o.id}:${l.intensity?.toFixed(3)}:${l.color?.getHex()}:${l.angle}:${l.penumbra}:${e[12].toFixed(3)},${e[13].toFixed(3)},${e[14].toFixed(3)}`);
-      const t = (o as unknown as { target?: Object3D }).target;
-      if (t) parts.push(t.matrixWorld.elements.slice(12, 15).map((v) => v.toFixed(3)).join(','));
-      return;
-    }
+    if (l.isLight) return; // 조명은 아래(래스터 때문에 숨긴 조명도 센다)
     const m = o as Mesh;
     if (!isSolid(m)) return;
     const mat = m.material as { transmission?: number; ior?: number; thickness?: number; color?: { getHex(): number }; userData?: Record<string, unknown> };
@@ -209,6 +209,13 @@ function signature(scene: Object3D): string {
       glass.push(m.geometry.boundingSphere!.clone().applyMatrix4(m.matrixWorld));
     } else solids.push(m);
   });
+  for (const o of liveLights(scene, sunOnly)) {
+    const l = o as Object3D & { intensity?: number; angle?: number; penumbra?: number; color?: { getHex(): number } };
+    const e = o.matrixWorld.elements;
+    parts.push(`L${o.id}:${l.intensity?.toFixed(3)}:${l.color?.getHex()}:${l.angle}:${l.penumbra}:${e[12].toFixed(3)},${e[13].toFixed(3)},${e[14].toFixed(3)}`);
+    const t = (o as unknown as { target?: Object3D }).target;
+    if (t) parts.push(t.matrixWorld.elements.slice(12, 15).map((v) => v.toFixed(3)).join(','));
+  }
   if (!glass.length) return parts.join('|');
   for (const m of solids) {
     if (!m.geometry.boundingSphere) m.geometry.computeBoundingSphere();
@@ -221,7 +228,7 @@ function signature(scene: Object3D): string {
 }
 
 /** 화면 시험·확인용 */
-const debug = { runs: 0, running: false, last: null as CausticJob['stats'] | null, patches: 0, info: [] as { peak: number; size: string; at: string }[] };
+const debug = { runs: 0, running: false, last: null as CausticJob['stats'] | null, patches: 0, stage: 0, info: [] as { peak: number; size: string; at: string }[] };
 (window as unknown as { __caustics?: unknown }).__caustics = debug;
 
 export function Caustics() {
@@ -230,10 +237,11 @@ export function Caustics() {
   const photons = useMutracerStore((s) => s.mt.causticPhotons);
   const blur = useMutracerStore((s) => s.mt.causticBlur);
   const strength = useMutracerStore((s) => s.mt.causticStrength);
+  const sunOnly = useMutracerStore((s) => s.mt.causticSunOnly);
 
   useEffect(() => {
     if (!enabled) return;
-    (debug as { sig?: () => string }).sig = () => signature(scene);
+    (debug as { sig?: () => string }).sig = () => signature(scene, sunOnly);
     const group = new Group();
     group.name = 'caustics';
     group.userData.causticPatch = true;
@@ -254,7 +262,7 @@ export function Caustics() {
       }
     };
     const tick = () => {
-      const sig = signature(scene);
+      const sig = signature(scene, sunOnly);
       if (sig !== lastSig) {
         lastSig = sig;
         changedAt = performance.now();
@@ -268,7 +276,25 @@ export function Caustics() {
       if (!changedAt || job || performance.now() - changedAt < 400 || isGizmoDragging()) return;
       changedAt = 0;
       const s = useMutracerStore.getState().mt;
-      const mine = (job = startCausticJob(scene, { photons: s.causticPhotons, blur: s.causticBlur, reach: REACH }));
+      // 단계마다 화면을 바꾼다 — 첫 단계(광자 1/16)는 금방 나오고 뒤 단계가 또렷하게 다듬는다
+      const show = (patches: CausticPatch[]) => {
+        clear();
+        const k = useMutracerStore.getState().mt.causticStrength;
+        for (const p of patches) group.add(patchMesh(p, k));
+        debug.patches = patches.length;
+        debug.stage = mine.stats.stage;
+        debug.info = patches.map((p) => ({ peak: +p.peak.toFixed(3), size: `${p.width.toFixed(2)}×${p.height.toFixed(2)}m ${p.cols}×${p.rows}`, at: p.center.toArray().map((v) => v.toFixed(2)).join(',') }));
+        group.visible = true;
+      };
+      const mine: CausticJob = (job = startCausticJob(scene, {
+        photons: s.causticPhotons,
+        blur: s.causticBlur,
+        reach: REACH,
+        sunOnly: s.causticSunOnly,
+        onProgress: (patches) => {
+          if (job === mine) show(patches);
+        },
+      }));
       debug.running = true;
       debug.runs++;
       void mine.done.then((patches) => {
@@ -277,13 +303,7 @@ export function Caustics() {
         cancels = 0;
         debug.running = false;
         debug.last = { ...mine.stats };
-        if (!patches) return;
-        clear();
-        const k = useMutracerStore.getState().mt.causticStrength;
-        for (const p of patches) group.add(patchMesh(p, k));
-        debug.patches = patches.length;
-        debug.info = patches.map((p) => ({ peak: +p.peak.toFixed(3), size: `${p.width.toFixed(2)}×${p.height.toFixed(2)}m ${p.cols}×${p.rows}`, at: p.center.toArray().map((v) => v.toFixed(2)).join(',') }));
-        group.visible = true;
+        if (patches) show(patches);
       });
     };
     const id = window.setInterval(tick, 250);
@@ -295,7 +315,7 @@ export function Caustics() {
       scene.remove(group);
       debug.running = false;
     };
-  }, [scene, enabled, photons, blur]);
+  }, [scene, enabled, photons, blur, sunOnly]);
 
   // 세기만 바뀌면 다시 계산하지 않고 곱만 바꾼다
   useEffect(() => {

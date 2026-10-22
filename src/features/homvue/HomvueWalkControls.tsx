@@ -1,6 +1,7 @@
 import { useEffect, useRef } from 'react';
 import { useFrame, useThree } from '@react-three/fiber';
 import { Box3, Euler, MathUtils, Raycaster, Vector3, type Mesh, type Object3D, type PerspectiveCamera } from 'three';
+import { useViewStore } from '@/engine/stores/viewStore';
 import { useHomvueStore } from './homvueStore';
 import { isGizmoBusy } from '@/features/models/gizmoGuard';
 import { EYE_HEIGHT_CM, FOCUS_PITCH_DEG } from './homvueTravel';
@@ -87,12 +88,23 @@ function WalkController() {
     s.pitch = s.tpitch = 0;
     s.eye.set(camera.position.x, useHomvueStore.getState().offset[1] + EYE, camera.position.z);
 
+    // 화각 — 기본은 언리얼 카메라(가로 화각 고정, 창 비율 따라 세로 환산). 투어 중에 조명·렌더 패널 「카메라 화각」을
+    // 움직이면 그 값(세로)을 따른다 — 둘러보기를 끝내면 원래 화각으로
+    let userFov = false;
     const applyFov = () => {
-      const h = MathUtils.degToRad(UE_HORIZONTAL_FOV);
-      camera.fov = MathUtils.radToDeg(2 * Math.atan(Math.tan(h / 2) / camera.aspect));
+      if (userFov) camera.fov = useViewStore.getState().cameraFov;
+      else {
+        const h = MathUtils.degToRad(UE_HORIZONTAL_FOV);
+        camera.fov = MathUtils.radToDeg(2 * Math.atan(Math.tan(h / 2) / camera.aspect));
+      }
       camera.updateProjectionMatrix();
     };
     applyFov();
+    const offFov = useViewStore.subscribe((v, p) => {
+      if (v.cameraFov === p.cameraFov) return;
+      userFov = true;
+      applyFov();
+    });
 
     const el = gl.domElement;
     // 끌기 시작 문턱 4px — 클릭(선택) 판정과 같다. 문턱 없이 돌리면 클릭할 때 손 떨림 1~2px 로도 시점이 돌아
@@ -151,7 +163,8 @@ function WalkController() {
       window.removeEventListener('keyup', keyUp);
       window.removeEventListener('blur', onBlur);
       window.removeEventListener('resize', applyFov);
-      camera.fov = prevFov;
+      offFov();
+      camera.fov = userFov ? useViewStore.getState().cameraFov : prevFov;
       camera.updateProjectionMatrix();
     };
   }, [camera, gl]);

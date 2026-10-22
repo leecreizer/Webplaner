@@ -1,7 +1,7 @@
 {
   "name": "homeplanner3-web",
   "private": true,
-  "version": "0.1.61",
+  "version": "0.1.62",
   "type": "module",
   "description": "HomePlanner3 Three.js/React migration of the Unity 6.3 WebGL project. Pure web stack — no Unity runtime.",
   "scripts": {
@@ -13,25 +13,25 @@
     "test": "vitest run"
   },
   "dependencies": {
-    "@meimu/mutracer": "^0.1.1",
+    "@meimu/mutracer": "^0.1.5",
     "@react-three/drei": "^10.7.7",
     "@react-three/fiber": "^9.6.1",
     "@react-three/postprocessing": "^3.0.4",
     "n8ao": "^1.10.2",
-    "postprocessing": "^6.39.1",
+    "postprocessing": "^6.39.5",
     "react": "^19.2.0",
     "react-dom": "^19.2.0",
-    "three": "^0.185.0",
+    "three": "^0.186.1",
     "three-bvh-csg": "^0.0.18",
     "three-gpu-pathtracer": "^0.0.24",
-    "three-mesh-bvh": "^0.9.10",
+    "three-mesh-bvh": "^0.9.16",
     "zustand": "^5.0.2"
   },
   "devDependencies": {
     "@types/node": "^22.10.2",
     "@types/react": "^19.2.0",
     "@types/react-dom": "^19.2.0",
-    "@types/three": "^0.185.0",
+    "@types/three": "^0.186.0",
     "@vitejs/plugin-react": "^4.3.4",
     "typescript": "^5.7.2",
     "vite": "^6.0.3",
